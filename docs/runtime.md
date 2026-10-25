@@ -28,7 +28,7 @@ The mandatory host-plugin verifier checks:
 
 ## One native host for Web and Codex
 
-The plugin's two native plugins are `dsh-agent-team/roles` and `dsh-agent-team/bridge`. Load them into the same source-built native Web profile that provides SessionController and native Agent Team services. Keep native collaboration tools, workspace policies, tools and approvals in that profile. Point the disposable stdio MCP client at that host's private Unix socket. Closing the client leaves the native host running.
+The native bundle entry is `dsh-team-roles` (stable entry id `dsh-agent-team`); its internal modules export `dsh-team-roles/roles` and `dsh-team-roles/bridge`. Load the bundle into the same source-built native Web profile that provides SessionController and native Agent Team services. Keep native collaboration tools, workspace policies, tools and approvals in that profile. Point the disposable stdio MCP client at that host's private Unix socket. Closing the client leaves the native host running.
 
 Run `npm run test:native` for keyless validation using temporary native Contexts and synthetic stores. The earlier isolated browser-host launch helpers have been removed; live validation and ordinary use attach to the installed user's native Web host. Start only one native host per writable DSH data directory. Use the native URL and supported authentication flow; do not copy browser credentials or disable Host, Origin or Cookie checks. The plugin does not provide a second Web interface or scheduler.
 

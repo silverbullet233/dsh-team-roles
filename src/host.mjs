@@ -14,7 +14,7 @@ export async function apply(ctx, config) {
   const resolved = await validateCatalog(ctx.llm, value);
   const roles = { stateDirectory: config.stateDirectory, leadRole: resolved.leadRole, roles: Object.fromEntries(Object.entries(resolved.roles).map(([name, { role, ...fields }]) => [name, fields])) };
   await ctx.plugin(Roles, roles);
-  ctx.dshRoles.catalogSource = () => catalogValue(config.catalog.get());
+  await ctx.inject(['dshRoles'], child => { child.dshRoles.catalogSource = () => catalogValue(config.catalog.get()); });
   await ctx.plugin(TeamRoleSettings, { hostContext: ctx, config });
   await ctx.plugin(Bridge, { stateDirectory: config.stateDirectory, socketPath: config.socketPath, allowedRoots: config.allowedRoots });
   if (config.validation !== undefined) {

@@ -84,12 +84,14 @@ function TeamRoles({ form, save, models }) {
 
 export async function apply(ctx) {
   await ctx.remote.$mount(remote);
-  const form = ctx.configForms.get('dsh-agent-team');
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
+  await ctx.inject(['remote.teamRoleSettings'], child => {
+  const form = child.configForms.get('dsh-agent-team');
+  child.slots.inject('settings.section', () => child.slots.register({
     name: 'settings.section', id: 'team-roles', label: 'Team roles', order: 45,
     inject: () => ({ form,
-      save: async (catalog, revision) => { const result = await ctx.remote.teamRoleSettings.save(catalog, revision); if (!result.ok) throw new Error(result.error.message); return result.value; },
-      models: async () => { const result = await ctx.remote.session.modelCatalog(); if (!result.ok) throw new Error(result.error.message); return result.value; },
+      save: async (catalog, revision) => { const result = await child.remote.teamRoleSettings.save(catalog, revision); if (!result.ok) throw new Error(result.error.message); return result.value; },
+      models: async () => { const result = await child.remote.session.modelCatalog(); if (!result.ok) throw new Error(result.error.message); return result.value; },
     }),
   }, TeamRoles));
+  });
 }

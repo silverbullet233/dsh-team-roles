@@ -1,8 +1,9 @@
 {
   "stateDirectory": "/tmp/dsh-team-example-state",
   "socketPath": "/tmp/dsh-team-example-ipc/team.sock",
-  "allowedRoots": ["/absolute/authorized/workspace"],
-  "nativeTeam": "add",
+  "allowedRoots": [
+    "/absolute/authorized/workspace"
+  ],
   "leadRole": "lead",
   "roles": {
     "lead": {

@@ -35,7 +35,7 @@
   "scripts": {
     "test": "npm run test:unit",
     "test:unit": "node --test test/auth/*.test.mjs test/bridge/*.test.mjs test/roles/*.test.mjs test/native/synthetic-fixtures.test.mjs",
-    "test:native": "node --test test/native/shared-session.test.mjs test/native/validation-scope.test.mjs test/native/settings.test.mjs",
+    "test:native": "node --test test/native/shared-session.test.mjs test/native/validation-scope.test.mjs test/native/settings.test.mjs test/native/host.test.mjs",
     "test:runtime": "node --test test/runtime/*.test.mjs",
     "check": "node scripts/check.mjs",
     "build": "node scripts/build.mjs",

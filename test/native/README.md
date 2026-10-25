@@ -1,6 +1,6 @@
 # Native integration checks
 
-The executed keyless suite has passed 17 shared-host scenarios and one validation-scope regression against official source `22ddee3792402c3e70ec5f86a63c3e3e895a2f60`. Run `npm run runtime:connect`, `npm run runtime:verify`, then `npm run test:native` against that complete source build. The connector only links plugin-local dependencies; it does not build or install DSH.
+The keyless suite covers shared-host scenarios, validation scope, native Settings transactions, full host composition and removed-role recovery against official source `22ddee3792402c3e70ec5f86a63c3e3e895a2f60`. Run `npm run runtime:connect`, `npm run runtime:verify`, then `npm run test:native` against that complete source build. The connector only links plugin-local dependencies; it does not build or install DSH.
 
 Tests use public native ESM packages, generated SessionController reflection, one native Session store, the shared Gateway and the actual bridge plugin. Startup verifies the complete host/frontend manifest and serving service identities. Local Unix socket listening must be permitted.
 

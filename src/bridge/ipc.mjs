@@ -43,7 +43,7 @@ export async function serveBridge({ socketPath, bridge }) {
     socket.on('data', chunk => {
       if (handled || closing) { socket.destroy(); return; }
       body = Buffer.concat([body, chunk]);
-      if (body.length > MAX_REQUEST_BYTES) { handled = true; socket.end(`${JSON.stringify({ id: null, error: { code: 'REQUEST_TOO_LARGE', message: 'IPC request exceeds the byte limit.' } })}\n`); return; }
+      if (body.length > MAX_REQUEST_BYTES) { handled = true; socket.end(`${JSON.stringify({ protocol: PROTOCOL_VERSION, id: null, error: { code: 'REQUEST_TOO_LARGE', message: 'IPC request exceeds the byte limit.' } })}\n`); return; }
       const end = body.indexOf(10);
       if (end < 0) return;
       handled = true;
