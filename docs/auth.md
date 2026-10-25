@@ -1,0 +1,11 @@
+# Existing native authentication
+
+The shared host can use `ReadOnlyNativeCredentials` from `src/auth/provider.mjs` when validation must read the user's existing DSH registrations without changing authentication. Mount this class as the host's sole credential provider before the native Connection and LLM adapters. Configure an explicit canonical absolute `path` to the existing `.credentials.yaml`; `maxDocumentBytes` defaults to 1048576. The provider uses public DSH ESM exports from the pinned runtime.
+
+Each operation reads the current owner-only regular file through an `O_NOFOLLOW` handle, bounds its bytes, checks stability, and invokes the native `parseCredentialsDocument` parser. Missing files, symlinks, foreign ownership, group/other permissions, invalid encoding, unsupported versions and malformed documents fail closed. No file, environment fallback, watcher, migration or credential cache is created.
+
+`set`, `unset` and `deleteRecord` always reject. `modifyRecord` permits a read-only check only when the callback receives a detached current record, leaves it unchanged and returns `undefined`; the provider then confirms that the file still contains the same record. A replacement, new record, in-place edit or OAuth refresh is refused without writing. This lets native BrowserAuth validate an existing signing record through its normal callback while keeping signing-key creation blocked. A route requiring refreshed credentials must be renewed separately through the authorized native DSH workflow. Credential values are resolved only inside the native host and are never returned through bridge health or status.
+
+The native Connection still performs its normal Host, Origin and Cookie checks. A missing `client-connection/browser-session` signing record causes its attempted creation to fail; creating that durable owner credential requires separate approval. This provider does not mint signing keys or launch tokens and does not copy browser cookies.
+
+`registeredRouteCatalog(ctx, [{provider, model}])` reads exact routes from the live native LLM registry and reports only provider/model names, availability and reasoning efforts. It neither chooses arbitrary endpoints nor changes defaults. `nativeCredentialPresence` reports only credential presence and writability. Neither helper starts inference.

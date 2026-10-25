@@ -1,0 +1,63 @@
+{
+  "name": "dsh-team-roles",
+  "version": "0.2.0",
+  "description": "Durable role profiles, native Team integration and native Web settings for DSH",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=24.9.0"
+  },
+  "exports": {
+    ".": "./src/host.mjs",
+    "./host": "./src/host.mjs",
+    "./roles": "./src/roles/index.mjs",
+    "./bridge": "./src/bridge/index.mjs",
+    "./auth": "./src/auth/provider.mjs",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-general"
+      ],
+      "external": [
+        "react"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/auth/*.test.mjs test/bridge/*.test.mjs test/roles/*.test.mjs test/native/synthetic-fixtures.test.mjs",
+    "test:native": "node --test test/native/shared-session.test.mjs test/native/validation-scope.test.mjs test/native/settings.test.mjs",
+    "test:runtime": "node --test test/runtime/*.test.mjs",
+    "check": "node scripts/check.mjs",
+    "build": "node scripts/build.mjs",
+    "pack:check": "npm pack --dry-run --ignore-scripts",
+    "runtime:connect": "node scripts/runtime/connect.mjs",
+    "runtime:verify": "node scripts/runtime/verify.mjs"
+  },
+  "files": [
+    "src",
+    "lib",
+    "scripts",
+    "docs",
+    "examples",
+    "cordis.patch.yml",
+    "runtime-lock.json",
+    "README.md",
+    "LICENSE",
+    "test/fixtures/audit.mjs",
+    "test/fixtures/synthetic-files.mjs",
+    "package-lock.json"
+  ],
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
