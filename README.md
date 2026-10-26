@@ -30,6 +30,8 @@ A downloaded file can also be installed with `dsh plugin --profile web add /path
 
 Open **account menu → Settings → Team roles** in native Web. Add roles with a name, description, instructions, registered provider, model and optional reasoning effort, then select a default Lead role and save. Invalid routes and stale edits are rejected.
 
+Settings saves the role catalog. With roles configured, [create a role-managed Team through the plugin IPC API](docs/protocol.md#create-a-role-managed-team) to apply its Lead route and `spawn_role_teammate` tool. Ordinary Sessions/Teams created directly in Web retain native behavior; IPC-created Teams are also visible in Web.
+
 An empty catalog allows new Teams to use native model inheritance. Existing managed members keep their saved bindings when roles change or are removed; existing unmanaged Teams stay unmanaged when roles are added. Role selection is model-driven.
 
 See [configuration and upgrades](docs/configuration.md) for storage paths and precedence. Text prompts are supported; native workspace and approval rules still apply.

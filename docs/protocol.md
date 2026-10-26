@@ -17,6 +17,29 @@ Methods and parameters:
 - `send`: `{ teamId, inputId, text, mode?: "queue" | "steer", continue?: boolean }`.
 - `status`, `result`, `stop`: `{ teamId }`.
 
+## Create a role-managed Team
+
+With a nonempty saved role catalog, IPC `create` reserves the default Lead role before native Session creation. Ordinary Web creation does not reserve that role. The resulting Session/Team remains visible in native Web.
+
+This example starts work. Replace the socket with the configured `socketPath` and the directory with an allowlisted workspace. Use a unique `key` for each new Team; retain it when checking an uncertain admission.
+
+```sh
+node --input-type=module - /path/to/native.sock /absolute/allowed/workspace <<'JS'
+import { createConnection } from 'node:net';
+const [socketPath, cwd] = process.argv.slice(2);
+const request = { protocol: 1, id: 'create-example', method: 'create', params: {
+  key: 'example-team-001', cwd,
+  text: 'Handle this synthetic example using configured roles.',
+} };
+const socket = createConnection(socketPath);
+socket.on('error', error => { console.error(error.message); process.exitCode = 1; });
+socket.on('data', chunk => process.stdout.write(chunk));
+socket.once('connect', () => socket.write(JSON.stringify(request) + '\n'));
+JS
+```
+
+The response contains `result.teamId` for subsequent `status`, `send` or `result` requests. Without configured roles, `create` preserves native model inheritance.
+
 The existing durable idempotency and continuation semantics remain unchanged. A transport failure can leave admission uncertain; keep the original key/input ID and inspect status. Disconnect/EOF never cancels native work. `stop` retains file changes. Unknown costs and usage remain null. `selected` can be null for unloaded members while `lastRequest` remains durable evidence. Only text input is supported.
 
 Settings writes use the authenticated native Typert Gateway and Settings editor, not this IPC surface. The IPC API does not grant access to modify roles or native provider credentials.

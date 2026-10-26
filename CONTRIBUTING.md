@@ -11,6 +11,7 @@ Use a separate checkout without npm-installed `node_modules`, and the complete c
 ```sh
 npm run runtime:connect -- /absolute/path/to/built-dsh
 npm run runtime:verify
+npm run build
 npm run test:unit
 npm run test:native
 npm run test:runtime
