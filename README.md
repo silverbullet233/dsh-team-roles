@@ -81,23 +81,41 @@ Apply installation changes through the native lifecycle; coordinate restarts if 
 
 For development, use the supported source build's dependencies through an explicit developer environment; `scripts/runtime/connect.mjs <source-directory>` remains a **source-checkout development helper**, is excluded from the published package and is not an installation requirement. Build-only esbuild 0.28.2 is locked. The plugin requires no global TypeScript/pi-ai install or DSH upgrade.
 
-Before packaging a release from a prepared development checkout:
+The GitHub Actions workflow `.github/workflows/release.yml` validates pull requests with **read-only repository permissions**. After it is merged, a pushed `v*` tag runs the same build/tests and creates an **unpublished draft GitHub Release** with the built tarball and `SHA256SUMS`. A human reviews the assets and clicks **Publish release**. No npm publishing or repository secret setup is required.
+
+To release the current version after the workflow PR is merged:
 
 ```sh
-npm run test:unit
-npm run test:native
-npm run test:runtime
-npm run build
-npm pack --dry-run
-npm pack
-
-# Keyless isolated install/load of the actual built tarball.
-node scripts/test-portable-package.mjs /absolute/path/to/compatible-dsh ./dsh-team-roles-0.3.0.tgz
+git switch main
+git pull --ff-only origin main
+# Confirm package.json is 0.3.0 and the release workflow is in this commit.
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
-The manifest currently produces **`dsh-team-roles-0.3.0.tgz`**. `prepack` rejects missing entrypoints, generated native Web client and verification files; it does not run provider inference or mutate an installation. `--ignore-scripts` on package installation is supported because the release already contains the browser asset and needs no prepare/postinstall step. Archives contain no development-checkout paths, native service bundles, manual dependency links, credentials or native state. If an existing npm cache is unwritable, use an owned cache with `--cache /tmp/dsh-team-roles-npm-cache`.
+The tag must exactly match `v` plus `package.json` version and resolve to a commit on the remote default branch. Use a new version/tag for changed release bytes. The workflow serializes runs per ref, never replaces existing assets, refuses already published versions, and resumes partial draft uploads only when existing named assets have identical digests. It does not delete/recreate tags or publish the draft. To retry a failed run, use **Re-run jobs** on the same tag's Actions run. There is no manual dispatch or `pull_request_target` path.
 
-After review, a maintainer may attach the built tarball to a GitHub Release or separately publish it with `npm publish ./dsh-team-roles-0.3.0.tgz --access public`. This documentation does not perform either action. Choose an available npm name/scope and owner first; no registry reservation or publishing credentials have been configured. Keep plugin package version, Git tag and release asset consistent; a published npm name/version cannot be replaced with different bytes.
+The workflow pins checkout/setup/upload/download actions by commit, uses Node **26.0.0**, installs locked npm dependencies with lifecycle scripts disabled, builds the native Web asset, runs the runtime-independent release test subset, inspects the actual archive, and produces checksums. Only the tag-only draft job gets `contents: write`; PR/build jobs never receive that permission. The draft job checks out the exact validated commit and installs/runs no npm dependencies.
+
+A clean local reproduction of the build/package portion needs Node >=24.9.0 and public network access, without a local DSH installation:
+
+```sh
+npm ci --ignore-scripts --no-audit --no-fund
+npm run build:release
+npm run test:release
+mkdir -p dist/release
+npm pack --dry-run
+npm pack --pack-destination dist/release
+node scripts/release/check-tarball.mjs dist/release/dsh-team-roles-0.3.0.tgz
+```
+
+Run these commands in a clean release checkout: `npm ci` replaces development dependencies. The build downloads only the official pure `remote-info.ts` metadata helper from DSH commit `22ddee3792402c3e70ec5f86a63c3e3e895a2f60`, checks its pinned SHA-256, and lets esbuild erase its type-only imports. This is the same metadata API already bundled into the browser client; no DSH service implementation, native service constructor, provider, or credential is installed or executed. The helper stays in ignored build storage, outside the release archive. This build-only input does not certify a newer native DSH runtime.
+
+The release test subset excludes the native credential provider/bundle tests, native integration suites and complete-runtime verification because those require the separately prepared, unreleased compatible DSH build. Run full `test:unit`, `test:native`, `test:runtime` and `scripts/test-portable-package.mjs` in that prepared environment when validating native behavior. The hosted workflow performs no provider inference. Its successful package build is not a new native/browser compatibility certification.
+
+The manifest produces **`dsh-team-roles-0.3.0.tgz`**. `prepack` rejects missing entrypoints, generated native Web client and verification files; archive inspection rejects path escapes, links, local runtime/dependency trees, and workstation paths. `--ignore-scripts` on installation is supported because the tarball already contains the browser asset. GitHub's automatically generated source archives and direct `github:...#v0.3.0` source installs omit this asset.
+
+After publishing the draft and confirming both assets, install that version using the GitHub Release asset URL shown above. The URL is a future example until the Release is published. npm remains a separate, unperformed publication step; npm name availability/ownership has not been checked.
 
 The plugin version **0.3.0**, native IPC protocol **1**, and supported DSH source/version are separate compatibility dimensions. [Validation evidence](docs/validation.md) distinguishes actual local tarball installation from parse-only GitHub/npm syntax and keyless tests from historical real inference.
 
