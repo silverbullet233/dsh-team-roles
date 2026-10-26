@@ -1,0 +1,31 @@
+{
+  "stateDirectory": "/tmp/dsh-team-example-state",
+  "socketPath": "/tmp/dsh-team-example-ipc/team.sock",
+  "allowedRoots": [
+    "/absolute/authorized/workspace"
+  ],
+  "leadRole": "lead",
+  "roles": {
+    "lead": {
+      "description": "Coordinate native Team tasks and review the combined result.",
+      "instructions": "Use spawn_role_teammate for named roles. Coordinate through native tasks and messages, wait for required teammates, and verify the result.",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "reasoningEffort": "max"
+    },
+    "implementer": {
+      "description": "Implement an assigned change within its agreed write scope.",
+      "instructions": "Follow the assigned task and write scope, use native tools and approvals, and report validation evidence to the Lead.",
+      "provider": "opencode-go",
+      "model": "deepseek-v4.1-flash",
+      "reasoningEffort": "max"
+    },
+    "reviewer": {
+      "description": "Review assigned changes and their verification independently.",
+      "instructions": "Inspect the assigned scope and tests, identify concrete defects with evidence, and report to the Lead through native messaging.",
+      "provider": "deepseek-account",
+      "model": "deepseek-flash",
+      "reasoningEffort": "max"
+    }
+  }
+}

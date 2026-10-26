@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "source": {
+    "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
+    "commit": "22ddee3792402c3e70ec5f86a63c3e3e895a2f60",
+    "pnpmLockSha256": "de5ef69ab7f418a6b7e97e83943bdc7b04e943a59c798a1a97aaf3a244c80d73"
+  },
+  "build": {
+    "kind": "official-source-build",
+    "command": "pnpm run build",
+    "profile": "local",
+    "manifest": "scripts/runtime/source-build-manifest.json",
+    "manifestSha256": "9a35b50329d466a2e5cdd5e5293b6d9fb9944736836fde4e52cb9f1911bc994c",
+    "frontend": true,
+    "typechecked": true
+  }
+}
