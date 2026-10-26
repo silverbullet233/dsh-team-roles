@@ -41,7 +41,9 @@
     "pack:check": "npm pack --dry-run",
     "runtime:connect": "node scripts/runtime/connect.mjs",
     "runtime:verify": "node scripts/runtime/verify.mjs",
-    "prepack": "node scripts/check-package.mjs"
+    "prepack": "node scripts/check-package.mjs",
+    "build:release": "node scripts/ci/build.mjs",
+    "test:release": "node --test test/auth/profile-backup-safety.test.mjs test/auth/read-owner-file.test.mjs test/bridge/*.test.mjs test/roles/admission.test.mjs test/roles/config.test.mjs test/roles/lead-store.test.mjs test/roles/lifecycle.test.mjs test/roles/package.test.mjs test/roles/state.test.mjs test/native/synthetic-fixtures.test.mjs test/release/*.test.mjs"
   },
   "files": [
     "src",
