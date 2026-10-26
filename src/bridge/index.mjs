@@ -1,4 +1,4 @@
-/** Native host plugin: one Session service shared by Web and explicit MCP clients. */
+/** Native host plugin: one Session service shared by native Web and local IPC integrations. */
 import { join } from 'node:path';
 import { BridgeStore } from './private-store.mjs';
 import { SessionBridge } from './service.mjs';

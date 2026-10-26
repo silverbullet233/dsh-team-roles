@@ -1,13 +1,22 @@
-# Portable native runtime verification
+# Runtime requirements
 
-The installable package uses DSH's existing `PluginPackages` runtime resolution, which maps the installation and selected bundles into Node ESM/CommonJS lookup. Native peer packages are declared in `package.json`; DSH's normal profile uses a hoisted linker with peer auto-installation disabled. Optional peer metadata prevents an ordinary package manager from fetching another DSH runtime. These host APIs remain mandatory. Ordinary value libraries are normal production dependencies; native service constructors are not bundled.
+Supported runtime: complete official DSH source build **`22ddee3792402c3e70ec5f86a63c3e3e895a2f60`**, with matching generated reflection and Web artifacts. Released `dsh-v0.2.1-rc.3` at `1f81c047fc48fa190a683e469daa699857e9afe8` lacks required model APIs. A semver match alone is insufficient.
 
-At startup, the verifier resolves the actual public `@deepseek-ai/dsh-agent` module, derives its official source layout and checks the native launcher's `profileContext.installAnchor` when present. Public Cordis, Agent, SessionController/reflection, Team and Gateway imports must resolve inside that same source tree. The bridge additionally checks the serving services against those exact imported constructors. There is no saved CLI/source location, CLI-shim check, fallback link creation or environment-based runtime substitution in the distributed verifier.
+Use the official Web/base profile and `@deepseek-ai/dsh-experimental-agent-team-profile`. These profiles supply the required entries and transitive dependencies:
 
-Only official source `22ddee3792402c3e70ec5f86a63c3e3e895a2f60` with the sealed complete build is supported. Its required `agent.model.select/current`, durable selection, Team spawn and SessionController reflection APIs are checked before managed role installation or opening IPC. Missing peers produce `DSH_NATIVE_PEERS_UNAVAILABLE`; unavailable APIs, a mismatched anchor/source or changed build produce `DSH_RUNTIME_INCOMPATIBLE` with the required build and corrective action. A matching rc.3 semver string does not establish support.
+| Entries | Required capability |
+| --- | --- |
+| `agent`, `agent-loop` | Agent execution, `agent.model.select/current`, durable selection |
+| `session`, `session-projection`, `session-persistence-jsonl` | Sessions, projections and persistence |
+| `subagent`, `subagent-spawn-in-process` | Native child lifecycle and `spawn` backend |
+| `agent-team`, `tool-agent-team`, `ui-agent-team` | Team service, collaboration tools and visualization |
+| `session-controller`, `connection`, `typert`, `typert-loader`, `typert-gateway`, `remote-access` | Native session API, reflection and access policy |
+| `workspace`, `llm`, `tools`, `system-prompt` | Workspaces, model registry, tool policy and instructions |
+| `config-editor`, `settings` | Revisioned atomic settings writes |
+| `modules`, `api-remotes`, `ui-settings`, `ui-settings-general` | Native Web settings |
 
-The portable seal retains source SHA/cleanliness, source and installed dependency locks, compiler version/bytes, workspace/patch hashes, patched pi-ai files, complete generated Host artifacts and native Web artifact records/digests. It excludes `.modules.yaml` installation-directory metadata, whose store paths vary between locations/machines and are not execution artifacts. Regenerating the seal is an explicit reviewed source/build change, never an automatic installation step.
+Native peers resolve through the official profile resolver, preserving shared service identities. Optional package-manager peer metadata prevents installing another DSH runtime; host services remain required. Startup verifies APIs, source/build evidence and serving service identities before opening IPC. Missing peers return `DSH_NATIVE_PEERS_UNAVAILABLE`; incompatible APIs, source or build return `DSH_RUNTIME_INCOMPATIBLE`.
 
-`runtime-lock.json` contains relative verification paths and build identity only. Developers may call `scripts/runtime/connect.mjs` with an explicit source directory to populate a checkout's development dependencies; that helper and its links are not distributed or required for installation. A tarball must be loaded by the native launcher/profile resolver, rather than plain Node with missing native peers.
+`runtime-lock.json` and the sealed manifest bind source, dependencies and artifacts. Installation-directory metadata is excluded so a compatible build can relocate. Changing the seal requires an explicit compatibility review.
 
-Portability tests clone tracked official source and copy build/dependency artifacts into temporary relocated fixtures without root environment files or user credential/session data. They install the actual versioned tarball using native `dsh plugin`, load it via official app boot/resolution, and exercise Settings, Session/Team, native identity and private IPC with scripted providers. A second path and changed installation-directory metadata test location independence. This does not certify another DSH release, OS/architecture or physical machine.
+Node >=24.9.0 and UID-owned Unix sockets are required. macOS is validated; Windows is not established. The current bundle is not a drop-in for the default headless profile, even if no browser stays open. Preserve native workspace, approval and authentication policies. The IPC owner Peer cannot answer approvals.

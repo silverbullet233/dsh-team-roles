@@ -49,9 +49,9 @@
     "src",
     "lib",
     "docs/runtime.md",
-    "docs/migration.md",
+    "docs/configuration.md",
     "docs/protocol.md",
-    "docs/validation.md",
+    "docs/auth.md",
     "scripts/check-package.mjs",
     "scripts/runtime/verify.mjs",
     "scripts/runtime/manifest.mjs",
@@ -62,7 +62,8 @@
     "cordis.patch.yml",
     "runtime-lock.json",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CONTRIBUTING.md"
   ],
   "devDependencies": {
     "esbuild": "0.28.2"
