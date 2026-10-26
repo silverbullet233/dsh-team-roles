@@ -1,9 +1,9 @@
 /** Native settings use an array so removing a role replaces it across profile layers. */
 import { record, resolveConfig, roleSnapshot } from '../roles/config.mjs';
 
-export function catalogValue(value) {
+export function catalogValue(value, { allowUnconfigured = false } = {}) {
   record(value, ['leadRole', 'roles'], 'role catalog');
-  if (!Array.isArray(value.roles) || value.roles.length === 0 || value.roles.length > 128) throw new Error('roles must contain 1 to 128 entries');
+  if (!Array.isArray(value.roles) || (!allowUnconfigured && value.roles.length === 0) || value.roles.length > 128) throw new Error(`roles must contain ${allowUnconfigured ? '0' : '1'} to 128 entries`);
   const roles = {};
   for (const entry of value.roles) {
     record(entry, ['name', 'description', 'instructions', 'provider', 'model', 'reasoningEffort'], 'role entry');
@@ -12,7 +12,7 @@ export function catalogValue(value) {
     const { role, ...snapshot } = roleSnapshot(name, fields);
     Object.defineProperty(roles, role, { value: snapshot, enumerable: true });
   }
-  return resolveConfig({ stateDirectory: '/catalog-validation', leadRole: value.leadRole, roles });
+  return resolveConfig({ stateDirectory: '/catalog-validation', leadRole: value.leadRole, roles, allowUnconfigured });
 }
 
 export function catalogFromLegacy(value) {
@@ -21,7 +21,7 @@ export function catalogFromLegacy(value) {
 
 /** Registry checks never infer, choose a fallback, or inspect credential values. */
 export async function validateCatalog(llm, value, signal) {
-  const catalog = catalogValue(value);
+  const catalog = catalogValue(value, { allowUnconfigured: true });
   const providers = new Set(llm.listProviders().map(item => item.id));
   const lists = new Map();
   for (const role of Object.values(catalog.roles)) {

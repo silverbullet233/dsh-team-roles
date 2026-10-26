@@ -65,3 +65,17 @@ test('native HMR disposal during route validation cancels the pending save witho
   await rejected;
   assert.equal(await read().catch(error => { if (error.code === 'ENOENT') return null; throw error; }), before);
 });
+
+
+test('native settings can clear all roles and reopen with native defaults while partial explicit catalogs reject', async t => {
+  const { ctx, start, read } = await settingsFixture(t);
+  const empty = { leadRole: '', roles: [] };
+  await ctx.teamRoleSettings.save(empty, descriptor(ctx).revision);
+  assert.deepEqual(descriptor(ctx).value.catalog, empty);
+  const before = await read();
+  await assert.rejects(ctx.teamRoleSettings.save({ leadRole: 'lead', roles: [] }, descriptor(ctx).revision));
+  assert.equal(await read(), before);
+  await ctx.fiber.dispose();
+  const reopened = await start();
+  assert.deepEqual(descriptor(reopened).value.catalog, empty);
+});

@@ -1,91 +1,87 @@
 # dsh-team-roles
 
-Role profiles and model routing for **native DeepSeek Harness Agent Teams**. This package owns the role catalog, immutable member bindings, native Session/Team integration, private IPC server and the **Team roles** page inside native DSH Web Settings. Codex's independent `dsh-agent-team` MCP client lives in `oh-my-codex`; neither package imports the other repository's source.
+**dsh-team-roles 0.3.0** adds configurable role profiles, immutable member bindings, private IPC and a **Team roles** settings page to native DeepSeek Harness. Native DSH owns Session/Team execution, tasks, messages, tools and approvals. The independent Codex MCP client is maintained separately as `dsh-agent-team`; this package contains no MCP server or second dashboard.
 
-## Versions and publication
+## Install by plugin version
 
-The plugin's `package.json` version is **0.2.0**. It is independent of DSH's version, the Git commit and the private IPC protocol version (currently 1). A GitHub push only updates repository source. A Git tag such as `v0.2.0`, a GitHub Release and an npm publication are separate operations; none happens automatically in this repository.
-
-| Distribution | Version users select | Native installer syntax, after that artifact exists |
-| --- | --- | --- |
-| npm registry | Published package version `0.2.0` | `dsh plugin --profile web add dsh-team-roles@0.2.0 --save-exact --ignore-scripts` |
-| GitHub source | Existing tag `v0.2.0` or full commit SHA | `dsh plugin --profile web add 'github:silverbullet233/dsh-team-roles#v0.2.0' --ignore-scripts` |
-| GitHub Release asset | Built npm `.tgz` attached to a release | `dsh plugin --profile web add 'https://github.com/silverbullet233/dsh-team-roles/releases/download/v0.2.0/dsh-team-roles-0.2.0.tgz' --ignore-scripts` |
-| Local built archive | Absolute `.tgz` path | `dsh plugin --profile web add /absolute/path/dsh-team-roles-0.2.0.tgz --ignore-scripts` |
-
-These forms were checked against the pinned DSH install-spec parser and its CLI forwarding to pnpm. They document accepted package sources, **not a claim that an npm version, tag or Release has been published**. npm `@0.2.0` looks in the configured npm registry; it does not select a GitHub tag. A GitHub Release's automatically generated source archive is not the built npm tarball. GitHub commit pins are more precise than movable tags. See [DSH plugin management](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/packages/boot/plugin-manager/README.md), [pnpm package sources](https://pnpm.io/package-sources) and [npm publishing](https://docs.npmjs.com/cli/v11/commands/npm-publish/).
-
-### Current installation limitation
-
-Version selection and a working runtime are separate requirements. This package currently consumes one sealed source-built DSH installation through **package-local symlinks** created by `scripts/runtime/connect.mjs`. npm archives do not include those links, and this package does not declare substitute registry DSH dependencies. The source tree also ignores generated `lib/client.js`; GitHub source plus `--ignore-scripts` does not build it. There is deliberately no automatic install/prepare hook that discovers or modifies the user's DSH installation.
-
-Consequently, the linked checkout procedure below is the supported, tested installation. A built tarball can be unpacked into a writable directory, connected to the same verified runtime, and installed from that prepared directory with `link:`. The exact-version npm and remote-tarball commands above are valid installer syntax, but **bare direct installation is not yet a portable, zero-setup release workflow**. Registry installation alone does not supply runtime links, configuration or the native Team profile.
-
-The current lock also records the tested CLI entrypoint `/Users/mxr/.local/bin/dsh` and source directory `/Users/mxr/github/deepseek/deepseek-harness`. The connector accepts another source directory and `DSH_SOURCE_ROOT` selects it for verification, but the host verifier still uses the lock's CLI entrypoint by default. Portable runtime/entrypoint binding needs a separate implementation and validation; editing a version range or granting a DSH compatibility exemption cannot replace the required APIs or artifact checks.
-
-## Prerequisites
-
-### DSH build and APIs
-
-The only verified runtime is the **complete official source build** at **`22ddee3792402c3e70ec5f86a63c3e3e895a2f60`**, including matching generated host reflection, dependencies and Web assets. The required APIs include `agent.model.select()`, `agent.model.current()`, durable native model selection, native Team membership/spawn/messages, Session projections/persistence and SessionController create/prompt/projections/cancel. Startup verifies sealed artifact hashes, actual public imports and the serving service identities before opening IPC. Having similarly named services from another runtime is insufficient.
-
-The released **`dsh-v0.2.1-rc.3` / `1f81c047fc48fa190a683e469daa699857e9afe8` is unsupported**: it shares `0.2.1-rc.3` version text but lacks the model APIs. No other released DSH version is certified here. This is an exact source/build requirement, not `>=0.2.1-rc.3`; the package intentionally does not encode a misleading `engines.dsh` semver range. There is no legacy adapter, custom runtime or DSH source patch. [Runtime verification](docs/runtime.md) records the tested build.
-
-### Node and package tools
-
-- **Node.js >=24.9.0**, as required by this package and the pinned DSH source; an OS supporting UID-owned Unix sockets and symlinks. macOS is the validated installation. Windows transport compatibility is not established.
-- An already built official DSH CLI and its complete installed source dependencies. Building DSH itself follows its [development documentation](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/docs/development.md) and declared package manager; this plugin does not build or upgrade DSH.
-- npm for package/build commands. `dsh plugin` forwards package operations to its configured/bundled pnpm; a separate global pnpm install is not this plugin's requirement. Git is needed for source/tag checkout and runtime revision verification.
-- Build-only **esbuild 0.28.2**, pinned in the npm lockfile. `runtime:connect` reuses it, `zod`, `js-yaml`, React and the matching `@deepseek-ai/*` modules from the sealed source installation. It refuses unmanaged existing dependency directories/symlinks. Follow the connector workflow rather than running `npm ci` over its managed links. Neither global TypeScript nor global pi-ai installation is required by this plugin; the verifier checks the source build's pinned TypeScript 6.0.3/pi-ai 1.3.0 artifacts.
-
-### Native profile plugins and services
-
-Use the official native Web profile and enable **`@deepseek-ai/dsh-experimental-agent-team-profile`** after the base profile, before this bundle. This is the official experimental Team layer, not an unrelated community Team implementation. It supplies entries `agent-team`, `tool-agent-team` and `ui-agent-team`, selects the registered native `spawn` backend and disables the ordinary delegation tool entries it replaces. In the existing tested profile it is already enabled; do not compose a second Team service.
-
-The standard profile must retain the following services and their supporting providers. The entry IDs below identify the pinned official composition; service keys are what this plugin injects.
-
-| Native entries / owning packages | Required service or purpose |
-| --- | --- |
-| `agent` (`@deepseek-ai/dsh-agent`), `agent-loop` | `agents`, native execution and model APIs |
-| `session`, `session-projection`, `session-persistence-jsonl` | `sessions`, `sessionProjections`, `sessionPersistence`; durable records and recovery |
-| `subagent`, `subagent-spawn-in-process` | Native child lifecycle and registered backend `spawn` |
-| `agent-team` (`@deepseek-ai/dsh-experimental-agent-team`), `tool-agent-team` | `agentTeams` and native collaboration tools |
-| `session-controller`, `connection`, `typert`, `typert-loader`, `typert-gateway`, `remote-access` | `sessionController`, `connection`, `typert`, `typertGateway`; generated reflection, authenticated native Remote transport and access policy |
-| `workspace` (`@deepseek-ai/dsh-workspace`) | `workspaceRegistry`; authorized native workspaces |
-| `llm`, `tools`, `system-prompt` | Exact model registry, native tools/guards and instructions |
-| `config-editor`, `settings` | Native profile persistence, atomic/revisioned role editing; mandatory even when no browser is open |
-| `api-remotes`, browser module loader, `ui-settings`, `ui-settings-general` | Web **Settings → Team roles** page; client modules declared in this package's `dsh.client.inject` |
-| `ui-agent-team` | Native browser Team/member visualization |
-
-The base and Web bundles provide these core entries; they are prerequisites, not a request to install every package separately. Native approval, sandbox, workspace and credential policies must remain enabled according to that profile.
-
-The browser UI entries provide rendering; the core role/IPC logic runs in the native host and clients can attach without a browser being open. The **shipped bundle nevertheless requires** Connection/Gateway/SessionController, Settings and the verified complete Web build. Installing it into the stock `dsh headless` profile is not a supported shortcut: that profile does not automatically provide this composition. A UI-free custom host would need the same host services and separate validation. No headless launch/install claim is made here.
-
-### Providers and local configuration
-
-Configure each role's provider in native DSH first, including its normal existing sign-in or credential reference. Every saved `provider` must be a registered provider ID, every `model` must appear in its native catalog, and any `reasoningEffort` must be supported by that exact model. Unknown routes are rejected without fallback. Example role IDs use `deepseek-account/deepseek-flash/max` and `opencode-go/deepseek-v4.1-flash/max`; these are example existing registrations, not providers this package creates or subscriptions it supplies. Your own valid registered routes may replace them.
-
-Keep credentials in DSH's supported credential/account configuration or inherited launch environment. Role JSON contains only provider references, model IDs and instructions. The installer creates `~/.dsh/dsh-agent-team.json` only when absent and preserves an existing file; check its role routes, `allowedRoots`, absolute state path and private socket path before activation. Native Web authentication remains required. One native host owns each writable state directory/socket; Codex's independent client attaches to that host.
-
-## Install a prepared checkout into native Web
-
-For a future tagged release, check out that existing tag first, for example `git clone --branch v0.2.0 --depth 1 https://github.com/silverbullet233/dsh-team-roles.git`. A versioned local directory or unpacked built npm tarball works with the same preparation. Do not replace an actively used linked directory in place.
-
-From the prepared plugin directory, use the runtime paths recorded by the current lock (these are the tested local paths):
+Install a built package into a compatible native DSH Web profile:
 
 ```sh
-node scripts/runtime/connect.mjs /Users/mxr/github/deepseek/deepseek-harness
-node scripts/runtime/verify.mjs
-npm run build
-node scripts/install-native.mjs
-/Users/mxr/.local/bin/dsh plugin --profile web add link:/absolute/path/to/dsh-team-roles --ignore-scripts
+dsh plugin --profile web add /absolute/path/dsh-team-roles-0.3.0.tgz --ignore-scripts
 ```
 
-The CLI entrypoint must also satisfy the lock binding described above. On migration, follow [the migration guide](docs/migration.md) before relinking so the old server and new server cannot both own the socket. `scripts/start-native.mjs --shell-env` uses ordinary interactive zsh initialization for existing provider references without copying credentials. Starting another host is not a client connection. No global dependencies, Codex preferences or provider authentication are changed by preparation. Apply lifecycle changes through native HMR where supported; coordinate any restart that could interrupt work.
+After the corresponding artifact is published, these native installer forms select a version:
 
-## Prepare a versioned release
+```sh
+# Requires a separately published npm version.
+dsh plugin --profile web add dsh-team-roles@0.3.0 --save-exact --ignore-scripts
 
-Run this locally in a connected, verified checkout before creating a release:
+# Requires the built npm tarball attached to an existing GitHub Release.
+dsh plugin --profile web add 'https://github.com/silverbullet233/dsh-team-roles/releases/download/v0.3.0/dsh-team-roles-0.3.0.tgz' --ignore-scripts
+```
+
+The **local versioned tarball** has been installed and loaded in an isolated native profile with a relocated compatible runtime. GitHub/npm publication has not been performed, and registry name availability/ownership has not been checked. A GitHub push updates source only: npm versions, Git tags and GitHub Releases are separate artifacts. See [DSH plugin management](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/packages/boot/plugin-manager/README.md) and [npm publishing](https://docs.npmjs.com/cli/v11/commands/npm-publish/).
+
+The parser also accepts `github:silverbullet233/dsh-team-roles#v0.3.0` or a commit pin. This is source installation syntax, not the tested binary-asset path: Git source omits generated `lib/client.js`, and `--ignore-scripts` will not build it. Use the built `.tgz` for direct installation. A GitHub-generated source archive is not that npm tarball. [pnpm package sources](https://pnpm.io/package-sources) documents the syntax.
+
+There is **no manual node_modules linking or runtime connector step for installed packages**. DSH's official profile resolver supplies the installation's native peers to ESM and CommonJS imports, retaining one Cordis and one set of native service constructors. Ordinary libraries (`zod` 4.4.3, `js-yaml` 4.3.2 and its dependency) install normally. Native peers are marked optional for package-manager installation so npm/pnpm does not fetch a second DSH runtime; the corresponding host services are still mandatory at runtime.
+
+## Required DSH runtime
+
+The supported runtime remains the **complete official source build** at **`22ddee3792402c3e70ec5f86a63c3e3e895a2f60`**, with matching generated reflection, source dependencies and Web artifacts. Its source tree and artifacts may be installed at another path. The plugin discovers the actual Agent module selected by the official resolver and verifies it against the launcher's installation anchor; it saves no workstation-specific CLI/source location and does not depend on a CLI shim path.
+
+Required APIs include `agent.model.select()`, `agent.model.current()`, durable model selection, native Team membership/spawn/messages, Session projections/persistence and SessionController create/prompt/projections/cancel. Startup checks these capabilities, sealed portable build evidence and actual serving service identities before provisioning managed roles or opening IPC. The seal omits package-manager installation-directory metadata, which changes on relocation; source/build/dependency/artifact verification remains. See [runtime verification](docs/runtime.md).
+
+The released **`dsh-v0.2.1-rc.3` at `1f81c047fc48fa190a683e469daa699857e9afe8` is unsupported** because it lacks the model APIs, even though its version string matches the tested source build. Peer version compatibility is only a preliminary package check, not API certification. No newer DSH release is certified here; there is no legacy adapter, silent fallback or bundled copy of native DSH service implementations.
+
+### Node and profile prerequisites
+
+- **Node.js >=24.9.0** and UID-owned Unix sockets. macOS is validated; Windows transport support is not established.
+- The already built supported official DSH installation. This plugin neither builds nor upgrades DSH. Native `dsh plugin` uses its configured/bundled pnpm; no separate global package-tool upgrade is required.
+- The official native Web/base profile, with **`@deepseek-ai/dsh-experimental-agent-team-profile`** enabled before this bundle. Its entries are `agent-team`, `tool-agent-team`, `ui-agent-team`; it selects the registered native `spawn` backend. Do not replace it with an unrelated community Team implementation or create a second Team service.
+
+The official profile supplies the following entries and their transitive dependencies; these are not instructions to install individual DSH packages from npm:
+
+| Entries / owning packages | Host services or purpose |
+| --- | --- |
+| `agent` (`@deepseek-ai/dsh-agent`), `agent-loop` | `agents`, native execution/model APIs |
+| `session`, `session-projection`, `session-persistence-jsonl` | `sessions`, `sessionProjections`, `sessionPersistence` |
+| `subagent`, `subagent-spawn-in-process` | Native child lifecycle and backend `spawn` |
+| `agent-team`, `tool-agent-team` | `agentTeams`, native collaboration tools |
+| `session-controller`, `connection`, `typert`, `typert-loader`, `typert-gateway`, `remote-access` | `sessionController`, `connection`, `typert`, `typertGateway`, reflection and native access policy |
+| `workspace` | `workspaceRegistry` and authorized workspaces |
+| `llm`, `tools`, `system-prompt` | Registry, tool guards and role instructions |
+| `config-editor`, `settings` | Atomic, revisioned native profile persistence |
+| `modules`, `api-remotes`, `ui-settings`, `ui-settings-general` | Native Web role settings rendering |
+| `ui-agent-team` | Native Team/member visualization |
+
+Browser display components render the UI; a browser need not stay open for IPC/native execution. The shipped bundle still needs Connection/Gateway/SessionController and Settings, and its runtime check still verifies the complete Web build. It is not a drop-in package for the default `dsh headless` composition. A custom UI-free host needs the same host services and separate validation.
+
+Keep native approval, sandbox, workspace, Host/Origin/Cookie and credential policies intact. The bridge's native owner Peer has `interactions: none` and cannot answer approvals. Run one native host per writable state directory/socket.
+
+## Configure roles in native Web
+
+Open the authenticated native Web UI and choose **account menu → Settings → Team roles**. A fresh installation loads an **empty catalog**, with no assumed provider/model. Teams can be created immediately: with no roles configured, the Lead uses the native main Agent selection and teammates inherit its provider, model and applicable reasoning options through native delegation. To use explicit role routes, add roles, choose a default Lead and save. Clearing the entire catalog (including the default Lead) restores native behavior for new Teams; malformed or invalid explicit routes still fail.
+
+Each role has `name`, `description`, `instructions`, an existing native `provider`, `model` and optional `reasoningEffort`. Configure providers and their normal native sign-in/credential references in DSH first. Saving checks exact provider registration, native catalog membership and supported effort. The package creates no provider account, subscription or credential. The example routes `deepseek-account/deepseek-flash/max` and `opencode-go/deepseek-v4.1-flash/max` refer to previously configured registrations, not a promise every installation has them.
+
+A save uses native Settings locking, atomic persistence and a revision fence; stale drafts are rejected. **Reload saved roles** discards a draft. Changes apply immediately to **new Leads and new members**. Existing member snapshots, follow-up, explicit model selections and cold recovery retain their original bindings. Removing a role blocks new reservations, while old bound members remain recoverable. An existing unmanaged native Lead stays unmanaged when roles are later configured; clearing the catalog does not change existing managed Lead/member snapshots.
+
+Lead receives the current role names, descriptions and exact provider/model/effort on each prompt assembly. It chooses a role through `spawn_role_teammate`; the server validates the reservation. Selection is model-driven, with no deterministic complexity scoring. Complete instructions bind to the chosen member.
+
+### Defaults and migration
+
+Fresh defaults use the native Harness home: state under `dsh-agent-team/state`, socket under the OS temporary directory as `dsh-agent-team-<uid>/native.sock`, and the profile launch directory as the workspace allowlist. Adjust ordinary deployment fields through the native profile configuration when needed. Socket parent/socket permissions remain `0700`/`0600`.
+
+If `dsh-agent-team.json` already exists in the native Harness home, its deployment fields and role catalog remain inherited initial values. Native Settings saves `catalog: { leadRole, roles: [...] }` under stable entry id **`dsh-agent-team`** in the active profile's `cordis.patch.yml`. Saved profile catalog values take precedence over the legacy JSON; higher home/CLI overlays keep native precedence and conflicting form writes are refused. No installer rewrites credentials, native account/session data or the legacy file. See [migration and rollback](docs/migration.md).
+
+Apply installation changes through the native lifecycle; coordinate restarts if the selected profile requires one. Never run an old and new native role bridge against the same writable store/socket. The Codex client connects to the existing host rather than starting another writer.
+
+## Build and release
+
+For development, use the supported source build's dependencies through an explicit developer environment; `scripts/runtime/connect.mjs <source-directory>` remains a **source-checkout development helper**, is excluded from the published package and is not an installation requirement. Build-only esbuild 0.28.2 is locked. The plugin requires no global TypeScript/pi-ai install or DSH upgrade.
+
+Before packaging a release from a prepared development checkout:
 
 ```sh
 npm run test:unit
@@ -94,36 +90,19 @@ npm run test:runtime
 npm run build
 npm pack --dry-run
 npm pack
+
+# Keyless isolated install/load of the actual built tarball.
+node scripts/test-portable-package.mjs /absolute/path/to/compatible-dsh ./dsh-team-roles-0.3.0.tgz
 ```
 
-`npm pack` produces `dsh-team-roles-0.2.0.tgz` for the current manifest version. The `prepack` check rejects missing declared entrypoints, the generated native Web client and runtime verification files. It does not build assets or connect a runtime automatically. `--ignore-scripts` skips lifecycle checks; use the ordinary pack command to prepare release archives. A clean Git source archive without `lib/client.js` must be built first. Package archives intentionally exclude local node_modules/symlinks, secrets and native state. If your existing npm cache is not writable, use an owned cache directory with `--cache /tmp/dsh-team-roles-npm-cache`; no global ownership change is required.
+The manifest currently produces **`dsh-team-roles-0.3.0.tgz`**. `prepack` rejects missing entrypoints, generated native Web client and verification files; it does not run provider inference or mutate an installation. `--ignore-scripts` on package installation is supported because the release already contains the browser asset and needs no prepare/postinstall step. Archives contain no development-checkout paths, native service bundles, manual dependency links, credentials or native state. If an existing npm cache is unwritable, use an owned cache with `--cache /tmp/dsh-team-roles-npm-cache`.
 
-For each release, update `package.json` and the npm lockfile together, build/test the exact source revision, and keep any chosen Git tag consistent with that plugin version. After review, the maintainer can attach the built `.tgz` to a GitHub Release. Publishing that same artifact to npm is a **separate** authorized release action, for example `npm publish ./dsh-team-roles-0.2.0.tgz --access public`; an npm package name/version cannot be republished with different contents. No publish, tag or push is performed by the commands above. This repository has no automatic publication workflow or configured publishing credentials.
+After review, a maintainer may attach the built tarball to a GitHub Release or separately publish it with `npm publish ./dsh-team-roles-0.3.0.tgz --access public`. This documentation does not perform either action. Choose an available npm name/scope and owner first; no registry reservation or publishing credentials have been configured. Keep plugin package version, Git tag and release asset consistent; a published npm name/version cannot be replaced with different bytes.
 
-Before a public release, choose an available npm name/scope and publishing owner, and decide whether to distribute prepared source-build integrations or implement portable runtime binding for direct registry installation. The unscoped name `dsh-team-roles` is the current package name, not a verified registry reservation. A GitHub-only release with a built tarball supports versioned artifacts without npm publication, while still retaining the runtime preparation requirements.
+The plugin version **0.3.0**, native IPC protocol **1**, and supported DSH source/version are separate compatibility dimensions. [Validation evidence](docs/validation.md) distinguishes actual local tarball installation from parse-only GitHub/npm syntax and keyless tests from historical real inference.
 
-## Configure roles
+## IPC and limits
 
-Open the authenticated native Web UI, choose **Settings → Team roles**, edit roles and click **Save roles**. Each role has `name`, `description`, `instructions`, an existing native `provider`, a native `model` and optional `reasoningEffort`. The page reads the native model registry; save rechecks the exact provider/model/effort on the server and rejects unavailable routes with an explicit error. No inference or fallback occurs during editing. Provider registration names refer to native credentials; role configuration contains no credentials or endpoint overrides.
+Protocol **`dsh-team-roles` version 1** exposes `health`, `create`, `send`, `status`, `result`, `stop` over the private UID socket. The independent Codex client checks version/capabilities before work. See [wire details](docs/protocol.md). Disconnect/EOF leaves native work running; uncertain admission requires inspection with the same key/input ID before retry. Stop retains file changes.
 
-The catalog is one volatile Config field, persisted atomically by native Settings into the active Web profile's `cordis.patch.yml`. The page retains the revision at which editing began; concurrent edits are rejected. **Reload saved roles** discards a draft. A successful save takes effect immediately for **new Leads and new members**, without restarting the host or rewriting member records. Existing members, follow-ups and cold recovery preserve their immutable snapshots and native model selection. Removed roles cannot provision new members; members already bound to them still recover.
-
-The preserved `~/.dsh/dsh-agent-team.json` supplies deployment fields and the catalog's initial inherited values. After the first save, the profile catalog is authoritative. An array of role entries makes removal persist across configuration layers. Home patches and command-line overlays retain native precedence and cause a conflicting form write to be refused. Editing the legacy catalog does not override a saved profile catalog. See [configuration and rollback](docs/migration.md).
-
-## IPC and client contract
-
-IPC remains at the configured socket, normally `/tmp/dsh-agent-team-<uid>/native.sock`, with a UID-owned `0700` parent and `0600` socket. Protocol **`dsh-team-roles` version 1** supports `health`, `create`, `send`, `status`, `result` and `stop`. [The wire contract](docs/protocol.md) defines version and capability checks. Use `oh-my-codex`'s independent CLI or MCP client; this host package has no MCP server or client implementation.
-
-The bridge attaches through a native owner Peer with `interactions: none`; it cannot answer approvals and creates no network authentication endpoint. Native Host/Origin/Cookie/workspace/approval policy remains in force. Native DSH owns scheduling, messages, tasks and the Team/member UI.
-
-## Verification
-
-```sh
-npm run test:unit
-npm run test:native
-npm run test:runtime
-npm run build
-npm run pack:check
-```
-
-The native suite uses actual official Session/Team/Loader/Settings services with scripted keyless providers. It checks settings persistence, stale/invalid refusals, snapshot changes, cold recovery, routing and IPC lifetime. Local Unix sockets require host permission in restricted executors. [Validation evidence](docs/validation.md) distinguishes current migration checks from earlier live inference. Text input only; usage and fees remain unknown. No new live inference is needed for this migration.
+Inputs remain text-only. Unknown usage/fees and unloaded selections remain null. Portability validation uses actual native services and scripted keyless adapters, with no paid inference or user files. Cross-platform and a different physical machine have not been independently tested.

@@ -23,7 +23,7 @@ export class TeamRoleSettings extends TypertRemoteService {
       if (this !== hostContext.fiber) return next();
       const candidate = next();
       const value = candidate.catalog?.get?.() ?? candidate.catalog;
-      catalogValue(value);
+      catalogValue(value, { allowUnconfigured: true });
       const digest = inputDigest(value);
       if (digest !== inputDigest(config.catalog.get()) && digest !== service.approved) throw new Error('Save role changes from the Team roles settings page to validate the native route');
       return candidate;

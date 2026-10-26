@@ -97,7 +97,11 @@ export class DshRoles extends Service {
       if (roleName !== undefined && old.role !== roleName) throw new Error('Lead role conflicts with the durable reservation');
       return old;
     }
-    return this.leads.reserve(sessionId, this.role(roleName ?? this.currentCatalog().leadRole));
+    const catalog = this.currentCatalog();
+    // No reservation means native model selection and delegation remain in charge.
+    // Durable reservations above always win, including after the catalog is cleared.
+    if (roleName === undefined && Object.keys(catalog.roles).length === 0) return null;
+    return this.leads.reserve(sessionId, this.role(roleName ?? catalog.leadRole));
   }
 
   currentCatalog() { return this.catalogSource?.() ?? this.config; }
@@ -109,7 +113,7 @@ export class DshRoles extends Service {
 
   /** Public catalog omits model-visible instructions and contains no credentials. */
   catalog() {
-    return { leadRole: this.currentCatalog().leadRole, roles: Object.entries(this.currentCatalog().roles).map(([name, role]) => ({ name, description: role.description, ...routeOf(role) })) };
+    return { configured: Object.keys(this.currentCatalog().roles).length > 0, leadRole: this.currentCatalog().leadRole, roles: Object.entries(this.currentCatalog().roles).map(([name, role]) => ({ name, description: role.description, ...routeOf(role) })) };
   }
 
   async validateRoute(binding, signal) {

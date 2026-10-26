@@ -1,6 +1,6 @@
 {
   "name": "dsh-team-roles",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Durable role profiles, native Team integration and native Web settings for DSH",
   "type": "module",
   "engines": {
@@ -46,26 +46,91 @@
   "files": [
     "src",
     "lib",
-    "scripts",
-    "docs",
-    "examples",
+    "docs/runtime.md",
+    "docs/migration.md",
+    "docs/protocol.md",
+    "docs/validation.md",
+    "scripts/check-package.mjs",
+    "scripts/runtime/verify.mjs",
+    "scripts/runtime/manifest.mjs",
+    "scripts/runtime/source-build-manifest.json",
+    "scripts/live/host-fixture.mjs",
+    "test/fixtures/audit.mjs",
+    "test/fixtures/synthetic-files.mjs",
     "cordis.patch.yml",
     "runtime-lock.json",
     "README.md",
-    "LICENSE",
-    "test/fixtures/audit.mjs",
-    "test/fixtures/synthetic-files.mjs",
-    "package-lock.json"
+    "LICENSE"
   ],
   "devDependencies": {
     "esbuild": "0.28.2"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/silverbullet233/dsh-team-roles.git"
   },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "js-yaml": "4.3.2",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-session": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-experimental-agent-team": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-api-gateway": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-credentials": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-credentials-local": "0.2.1-rc.3",
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/schemastery": "3.18.5",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-agent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-typert-protocol": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-api-session-controller": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-experimental-agent-team": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-connection": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-api-gateway": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-credentials": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-credentials-local": {
+      "optional": true
+    },
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   }
 }

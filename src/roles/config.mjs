@@ -44,13 +44,14 @@ export function roleSnapshot(name, value) {
 
 /** Resolve deployment configuration once; existing members keep their stored snapshots. */
 export function resolveConfig(value) {
-  record(value, ['stateDirectory', 'leadRole', 'spawnProvider', 'roles'], 'role plugin config');
+  record(value, ['stateDirectory', 'leadRole', 'spawnProvider', 'roles', 'allowUnconfigured'], 'role plugin config');
   if (typeof value.stateDirectory !== 'string' || !isAbsolute(value.stateDirectory)) throw new Error('stateDirectory must be absolute');
   record(value.roles, Object.keys(value.roles ?? {}), 'roles');
   const roles = Object.fromEntries(Object.entries(value.roles).map(([name, role]) => [name, roleSnapshot(name, role)]));
-  if (Object.keys(roles).length === 0) throw new Error('roles must contain at least one role');
-  const leadRole = text(value.leadRole, 'leadRole');
-  if (!Object.hasOwn(roles, leadRole)) throw new Error('leadRole must name an allowlisted role');
+  const unconfigured = Object.keys(roles).length === 0 && value.allowUnconfigured === true && value.leadRole === '';
+  if (Object.keys(roles).length === 0 && !unconfigured) throw new Error('roles must contain at least one role');
+  const leadRole = unconfigured ? '' : text(value.leadRole, 'leadRole');
+  if (!unconfigured && !Object.hasOwn(roles, leadRole)) throw new Error('leadRole must name an allowlisted role');
   const spawnProvider = value.spawnProvider ?? 'spawn';
   if (spawnProvider !== 'spawn') throw new Error('only the native in-process spawn backend is supported');
   return Object.freeze({ stateDirectory: value.stateDirectory, leadRole, spawnProvider, roles: Object.freeze(roles) });

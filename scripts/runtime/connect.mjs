@@ -7,7 +7,9 @@ import { fileSha256, inspectSourceBuild, manifestText, sha256 } from './manifest
 export function connectRuntime(directory) {
   const project = resolve(import.meta.dirname, '../..');
   const lock = JSON.parse(readFileSync(join(project, 'runtime-lock.json'), 'utf8'));
-  const source = realpathSync(directory ?? process.env.DSH_SOURCE_ROOT ?? lock.source.directory);
+  const selected = directory ?? process.env.DSH_SOURCE_ROOT;
+  if (!selected) throw new Error('Development connector requires an explicit built DSH source directory. Installed packages use native profile resolution instead.');
+  const source = realpathSync(selected);
   if (fileSha256(join(project, lock.build.manifest)) !== lock.build.manifestSha256 || sha256(manifestText(inspectSourceBuild(source))) !== lock.build.manifestSha256) throw new Error('Source installation differs from the sealed complete native build');
   const names = new Set(['zod', 'js-yaml', 'esbuild', 'react']);
   for (const path of globSync(['vendor/*/package.json', 'packages/*/*/package.json', 'apps/cli/package.json'], { cwd: source })) {
@@ -15,7 +17,7 @@ export function connectRuntime(directory) {
     if (value.name?.startsWith('@deepseek-ai/')) names.add(value.name);
   }
   const changes = [];
-  const managedRoots = [join(project, '.runtime/dsh-source'), resolve(lock.source.directory), source];
+  const managedRoots = [join(project, '.runtime/dsh-source'), source];
   for (const name of [...names].sort()) {
     const path = join(project, 'node_modules', name);
     const target = [join(source, 'node_modules', name), join(source, 'node_modules/.pnpm/node_modules', name)].find(existsSync);
@@ -38,7 +40,7 @@ export function connectRuntime(directory) {
     if (previous !== null) unlinkSync(path);
     symlinkSync(target, path, 'dir');
   }
-  return { sourceSha: lock.source.commit, runtimeDirectory: source, changedLinks: changes.length, installedEntrypoint: lock.entrypoint };
+  return { sourceSha: lock.source.commit, runtimeDirectory: source, changedLinks: changes.length, runtimeResolution: 'development-links-only' };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) console.log(JSON.stringify(connectRuntime(process.argv[2]), null, 2));

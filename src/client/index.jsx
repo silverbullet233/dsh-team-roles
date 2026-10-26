@@ -28,7 +28,7 @@ function TeamRoles({ form, save, models }) {
       for (const role of value.roles) if (role.reasoningEffort === '') delete role.reasoningEffort;
       const saved = await save(value, revision);
       setRevision(saved.revision);
-      setDraft(value); setDirty(false); setMessage('Saved. New Leads and new members use these roles. Existing members retain their snapshots.');
+      setDraft(value); setDirty(false); setMessage(value.roles.length ? 'Saved. New Leads and new members use these roles. Existing members retain their snapshots.' : 'Saved. New Teams use native main Agent selection and teammate inheritance. Existing Teams retain their behavior.');
     } catch (error) { setMessage(error.message); }
     finally { setSaving(false); }
   };
@@ -38,13 +38,13 @@ function TeamRoles({ form, save, models }) {
   return <section style={{ padding: 20, maxWidth: 900 }}>
     <h2>Team roles</h2>
     <p>Configure role instructions and exact native provider routes. Changes apply immediately to new Leads and new members. Existing members, follow-ups and recovered members keep their original snapshots.</p>
-    <p>Removing a role prevents new members using it; bound members remain available. Saves use the native Web profile. Reload saved roles to discard a draft.</p>
+    <p>With no roles configured, new Teams use native main Agent model selection and teammate inheritance. Removing a role prevents new members using it; bound members remain available. Saves use the native Web profile. Reload saved roles to discard a draft.</p>
     {stale && <p role="alert">Roles changed in another editor. Reload saved roles before saving.</p>}
     {modelError && <p role="alert">Model catalog: {modelError}</p>}
     {catalog?.failures?.map(failure => <p role="status" key={failure.id}>{failure.id}: {failure.message}</p>)}
     <form onSubmit={submit}>
       <label style={field}>Default Lead role<select aria-label="Default Lead role" style={control} value={draft.leadRole} disabled={disabled} onChange={event => edit({ ...draft, leadRole: event.target.value })}>
-        {!draft.roles.some(role => role.name === draft.leadRole) && <option value={draft.leadRole}>{draft.leadRole} (missing)</option>}
+        {draft.roles.length === 0 ? <option value="">Native main Agent model</option> : !draft.roles.some(role => role.name === draft.leadRole) && <option value={draft.leadRole}>{draft.leadRole || '(select Lead role)'} (missing)</option>}
         {draft.roles.map((role, i) => <option key={i} value={role.name}>{role.name || '(unnamed)'}</option>)}
       </select></label>
       {draft.roles.map((role, index) => {
@@ -68,7 +68,7 @@ function TeamRoles({ form, save, models }) {
             {role.reasoningEffort && !efforts.some(item => item.id === role.reasoningEffort) && <option value={role.reasoningEffort}>{role.reasoningEffort} — unavailable</option>}
             {efforts.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}
           </select></label>
-          <button type="button" onClick={() => edit({ ...draft, roles: draft.roles.filter((_, i) => i !== index) })}>Remove role {role.name}</button>
+          <button type="button" onClick={() => { const roles = draft.roles.filter((_, i) => i !== index); edit({ ...draft, roles, leadRole: roles.length ? draft.leadRole : '' }); }}>Remove role {role.name}</button>
         </fieldset>;
       })}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>

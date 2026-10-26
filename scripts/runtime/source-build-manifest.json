@@ -7,7 +7,6 @@
   "compilerEntrySha256": "569177652966bd528c319171c7dd22860dbf72bde116cbc4f644f1d02bb12e39",
   "dependencyLockSha256": "de5ef69ab7f418a6b7e97e83943bdc7b04e943a59c798a1a97aaf3a244c80d73",
   "installedDependencyLockSha256": "de5ef69ab7f418a6b7e97e83943bdc7b04e943a59c798a1a97aaf3a244c80d73",
-  "installationMetadataSha256": "0f731af9bc5230bf8972daa1df98040c9a5b4a6892f821b98921705aa5c5b943",
   "workspaceConfigSha256": "de115ba271b69d90470791124529424c88ebf2c13049f8946dd44ec5aed8fd4a",
   "patches": [
     {

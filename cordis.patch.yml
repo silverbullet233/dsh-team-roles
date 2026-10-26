@@ -1,11 +1,16 @@
-# Keep the durable entry id; change package ownership without changing member data.
+# Keep the durable entry id and legacy values when present. Fresh installations
+# start with native model selection/inheritance until explicit roles are saved.
 - insert:
     - id: dsh-agent-team
       name: dsh-team-roles
       config:
-        stateDirectory: !!js JSON.parse(process.getBuiltinModule('node:fs').readFileSync(dshHomePath('dsh-agent-team.json'), 'utf8')).stateDirectory
-        socketPath: !!js JSON.parse(process.getBuiltinModule('node:fs').readFileSync(dshHomePath('dsh-agent-team.json'), 'utf8')).socketPath
-        allowedRoots: !!js JSON.parse(process.getBuiltinModule('node:fs').readFileSync(dshHomePath('dsh-agent-team.json'), 'utf8')).allowedRoots
+        stateDirectory: !!js >-
+          (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).stateDirectory : dshHomePath('dsh-agent-team/state'); })()
+        socketPath: !!js >-
+          (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).socketPath : process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), 'dsh-agent-team-' + process.getuid(), 'native.sock'); })()
+        allowedRoots: !!js >-
+          (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).allowedRoots : [ctx.get('profileContext').cwd]; })()
         catalog: !!js >-
-          (() => { const c = JSON.parse(process.getBuiltinModule('node:fs').readFileSync(dshHomePath('dsh-agent-team.json'), 'utf8')); return { leadRole: c.leadRole, roles: Object.entries(c.roles).map(([name, role]) => ({ name, ...role })) }; })()
-        validation: !!js JSON.parse(process.getBuiltinModule('node:fs').readFileSync(dshHomePath('dsh-agent-team.json'), 'utf8')).validation
+          (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); if (!fs.existsSync(p)) return { leadRole: '', roles: [] }; const c = JSON.parse(fs.readFileSync(p, 'utf8')); return { leadRole: c.leadRole, roles: Object.entries(c.roles).map(([name, role]) => ({ name, ...role })) }; })()
+        validation: !!js >-
+          (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).validation : undefined; })()

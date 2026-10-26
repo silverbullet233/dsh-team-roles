@@ -1,28 +1,17 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "source": {
     "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
     "commit": "22ddee3792402c3e70ec5f86a63c3e3e895a2f60",
-    "directory": "/Users/mxr/github/deepseek/deepseek-harness",
     "pnpmLockSha256": "de5ef69ab7f418a6b7e97e83943bdc7b04e943a59c798a1a97aaf3a244c80d73"
   },
-  "entrypoint": "/Users/mxr/.local/bin/dsh",
   "build": {
     "kind": "official-source-build",
     "command": "pnpm run build",
     "profile": "local",
     "manifest": "scripts/runtime/source-build-manifest.json",
-    "manifestSha256": "cf7c9e592ae404efb0447e45ba540f60ea7dabb7c458ac872baf29aac5ba0a2d",
+    "manifestSha256": "9a35b50329d466a2e5cdd5e5293b6d9fb9944736836fde4e52cb9f1911bc994c",
     "frontend": true,
     "typechecked": true
-  },
-  "validation": {
-    "officialBuild": {
-      "passed": 10,
-      "failed": 0
-    },
-    "unitTests": 132,
-    "builtTeamTests": 1,
-    "sourceInstallReport": "/tmp/dsh-source-install-22ddee3/after.json"
   }
 }

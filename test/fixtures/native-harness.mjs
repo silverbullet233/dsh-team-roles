@@ -60,8 +60,8 @@ export async function mountNativeHost({ root, roles = fixtureRoles, respond = ()
     await ctx.plugin(teamTools, { interrupt: false, freshProvider: 'spawn', forkProvider: 'fork' });
     await ctx.plugin(approval.default, { policy: 'ask' });
     class FixtureAdapter extends llm.LlmAdapter {
-      async listModels(provider) { return [{ provider, id: 'fixture-model', name: 'Fixture model' }]; }
-      async resolveModel(provider, model) { return { provider, id: model, name: model, reasoning: { efforts: [{ id: 'max', name: 'Max' }], defaultEffort: 'max' } }; }
+      async listModels(provider) { return ['fixture-model', 'fixture-alternate'].map(id => ({ provider, id, name: id })); }
+      async resolveModel(provider, model) { return { provider, id: model, name: model, reasoning: { efforts: [{ id: 'high', name: 'High' }, { id: 'max', name: 'Max' }], defaultEffort: 'max' } }; }
       async *stream(options) {
         await audit(options);
         requests.push(options);

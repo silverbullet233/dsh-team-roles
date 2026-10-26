@@ -55,7 +55,6 @@ export function inspectSourceBuild(directory) {
     compilerEntrySha256: fileSha256(join(root, 'node_modules/typescript/lib/typescript.js')),
     dependencyLockSha256: fileSha256(join(root, 'pnpm-lock.yaml')),
     installedDependencyLockSha256: fileSha256(join(root, 'node_modules/.pnpm/lock.yaml')),
-    installationMetadataSha256: fileSha256(join(root, 'node_modules/.modules.yaml')),
     workspaceConfigSha256: fileSha256(join(root, 'pnpm-workspace.yaml')),
     patches: patchPaths.map(path => ({ path, sha256: fileSha256(join(root, path)) })),
     piAi: { version: piPackage.version, patchSha256: fileSha256(join(root, piPatch)), files: patchedFiles.map(path => ({ path, sha256: fileSha256(join(piRoot, path)) })) },

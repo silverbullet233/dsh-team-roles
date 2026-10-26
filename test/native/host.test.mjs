@@ -80,3 +80,43 @@ test('removed roles still recover bound native members from durable snapshots', 
   assert.match(JSON.stringify(request.messages), /LEFT_ROLE_V1/);
   assert.equal(host.ctx.agentTeams.listMembers(resumed).find(member => member.name === 'stable-left').id, first.member.id);
 });
+
+
+test('empty catalog preserves native Lead creation and current model inheritance before and after role configuration', { timeout: 20000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'team-role-empty-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  // Omitted catalog exercises Config's fresh-install default, without legacy JSON.
+  const host = await fixture(t, root);
+  assert.equal((await host.client.request('health')).roles.configured, false);
+  const created = await host.client.request('create', { key: 'native-default', cwd: host.fixtureRoot, text: 'Synthetic native default Lead.' });
+  const lead = host.ctx.agents.get(created.teamId);
+  await until(() => host.requests.some(request => request.sessionId === lead.id) && lead.status === 'idle');
+  assert.deepEqual(lead.model.current(), { provider: 'fixture-lead', model: 'fixture-model', reasoningEffort: 'max' });
+  assert.equal(await host.ctx.dshRoles.leads.read(lead.id), null);
+  await assert.rejects(host.ctx.dshRoles.prepareLead('explicit-missing-role', 'absent'), /not allowlisted/);
+  // Native delegation consumes the latest actual request, rather than creation defaults.
+  const selection = { provider: 'fixture-new', model: 'fixture-alternate', reasoningEffort: 'high' };
+  lead.model.select(selection);
+  await host.client.request('send', { teamId: lead.id, inputId: 'changed-native-selection', text: 'Synthetic changed native main Agent selection.' });
+  await until(() => host.requests.filter(request => request.sessionId === lead.id).length >= 2 && lead.status === 'idle');
+  const spawn = async name => {
+    const child = await host.ctx.agentTeams.spawnTeammate(lead, { name, description: 'Synthetic native inheritance.', prompt: [{ type: 'text', text: 'Synthetic inherited child.' }], context: 'fresh', provider: 'spawn', signal: new AbortController().signal });
+    await until(() => host.requests.some(request => request.sessionId === child.member.id));
+    const request = host.requests.find(request => request.sessionId === child.member.id);
+    assert.deepEqual({ provider: request.provider, model: request.model, reasoningEffort: request.reasoningEffort }, selection);
+    assert.equal((await host.ctx.dshRoles.bindings(lead.id)).length, 0);
+    return child;
+  };
+  await spawn('native-before-roles');
+  updateVolatile(host.fiber.effectiveConfig.catalog, createVolatile(catalogFromLegacy({ leadRole: 'lead', roles: fixtureRoles })));
+  const child = await spawn('native-after-roles');
+  const status = await host.client.request('status', { teamId: lead.id });
+  assert(status.teamActivity.members.some(member => member.id === child.member.id));
+  assert.equal(status.members.length, 0);
+  const managed = await host.client.request('create', { key: 'configured-new-lead', cwd: host.fixtureRoot, text: 'Synthetic explicit role Lead.' });
+  await until(() => host.requests.some(request => request.sessionId === managed.teamId));
+  assert.equal(host.requests.find(request => request.sessionId === managed.teamId).provider, 'fixture-lead');
+  updateVolatile(host.fiber.effectiveConfig.catalog, createVolatile({ leadRole: '', roles: [] }));
+  assert.equal((await host.ctx.dshRoles.prepareLead(managed.teamId)).provider, 'fixture-lead');
+  assert.equal(await host.ctx.dshRoles.prepareLead('fresh-after-clear'), null);
+});

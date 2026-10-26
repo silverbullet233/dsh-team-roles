@@ -34,7 +34,7 @@ export async function apply(ctx, config) {
   if (!config || typeof config.stateDirectory !== 'string' || typeof config.socketPath !== 'string') {
     throw new BridgeError('INVALID_CONFIG', 'stateDirectory and socketPath are required.');
   }
-  const runtimeEvidence = await verifyRuntime();
+  const runtimeEvidence = await verifyRuntime({ context: ctx });
   await assertNativeHost(ctx);
   const { z } = await import('zod');
   const projection = await ctx.sessionProjections.register(bridgeProjectionDefinition(z));
