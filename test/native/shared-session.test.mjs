@@ -200,8 +200,6 @@ test('native cancellation and missing approval answerers fail closed without rol
   const passive = host.ctx.connection.createPeer({ principal: { kind: 'owner' }, interactions: 'none' });
   await assert.rejects(host.ctx.typertGateway.wireStream.open('$events', { args: {} }, (async function* () {})(), passive, new AbortController().signal), { code: 'gateway/interactions-forbidden' });
   await passive.dispose();
-  const member = await host.ctx.dshRoles.spawn(lead, { name: 'cancel-one', role: 'left', prompt: 'Synthetic cancellable member.', signal: new AbortController().signal });
-  await until(() => host.requests.some((item) => item.sessionId === member.member.id));
   await host.files.write('left-result.txt', 'retained');
   const stopped = await host.client.request('stop', { teamId: created.teamId });
   assert.equal(stopped.accepted, true);
@@ -209,12 +207,25 @@ test('native cancellation and missing approval answerers fail closed without rol
   // Native cancel acknowledges the request before the driver and public read settle.
   const status = await until(async () => {
     const observed = await host.client.request('status', { teamId: created.teamId });
-    return observed.runtimeState === 'idle' && observed.rootTurnState === 'aborted'
-      && inactiveMember(host, lead, member.member.id) ? observed : false;
+    return observed.runtimeState === 'idle' && observed.rootTurnState === 'aborted' ? observed : false;
   }, { description: 'native cancellation to reach the public aborted state' });
   assert.equal(await host.files.read('left-result.txt'), 'retained');
   assert.equal(status.rootTurnState, 'aborted');
   await assert.rejects(host.client.request('send', { teamId: created.teamId, inputId: 'after-stop', text: 'Synthetic continuation.' }), { code: 'CONTINUATION_REQUIRED' });
+
+  await host.client.request('send', { teamId: created.teamId, inputId: 'resume-for-child', text: 'Synthetic explicit continuation.', continue: true });
+  await until(() => host.requests.filter((item) => item.sessionId === created.teamId).length === 2);
+  const member = await host.ctx.dshRoles.spawn(lead, { name: 'cancel-one', role: 'left', prompt: 'Synthetic cancellable member.', signal: new AbortController().signal });
+  await until(() => host.requests.some((item) => item.sessionId === member.member.id));
+  const stoppedTeam = await host.client.request('stop', { teamId: created.teamId });
+  assert.equal(stoppedTeam.accepted, true);
+  assert.equal(stoppedTeam.outcomes.find((item) => item.sessionId === member.member.id).cancellation, 'requested');
+  // A native child's settlement may wake the Lead with a new result-delivery turn.
+  await until(async () => {
+    const current = await host.ctx.sessionController.projections({ sessionId: member.member.id }, new AbortController().signal);
+    return current?.values.dshBridge.lastEnd?.reason === 'aborted' && inactiveMember(host, lead, member.member.id);
+  }, { description: 'native member interruption to finish' });
+  assert.equal(await host.files.read('left-result.txt'), 'retained');
 });
 
 test('a running native turn accepts steer and queued inputs without continuation and processes each input once', { timeout: 20000 }, async (t) => {
@@ -573,7 +584,9 @@ test('a native member model selection survives cold recovery independently of it
   const resumed = await host.ctx.sessionController.resolveAgent(rootId);
   assert(resumed.agent);
   await host.ctx.agentTeams.sendMessage(resumed.agent, { target: 'selected-one', content: content('Synthetic selected-route recovery.'), signal: new AbortController().signal });
-  await until(() => host.requests.some((request) => request.sessionId === member.member.id) && inactiveMember(host, resumed.agent, member.member.id));
+  await until(() => host.requests.some((request) => request.sessionId === member.member.id)
+    && inactiveMember(host, resumed.agent, member.member.id)
+    && host.ctx.agents.get(member.member.id) === undefined, { description: 'recovered native member to unload' });
   const request = host.requests.find((item) => item.sessionId === member.member.id);
   assert.equal(request.provider, 'fixture-new');
   assert.equal(request.reasoningEffort, 'max');
