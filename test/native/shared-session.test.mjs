@@ -206,9 +206,13 @@ test('native cancellation and missing approval answerers fail closed without rol
   const stopped = await host.client.request('stop', { teamId: created.teamId });
   assert.equal(stopped.accepted, true);
   assert.equal(stopped.filesRolledBack, false);
-  await until(() => lead.status === 'idle' && inactiveMember(host, lead, member.member.id));
+  // Native cancel acknowledges the request before the driver and public read settle.
+  const status = await until(async () => {
+    const observed = await host.client.request('status', { teamId: created.teamId });
+    return observed.runtimeState === 'idle' && observed.rootTurnState === 'aborted'
+      && inactiveMember(host, lead, member.member.id) ? observed : false;
+  }, { description: 'native cancellation to reach the public aborted state' });
   assert.equal(await host.files.read('left-result.txt'), 'retained');
-  const status = await host.client.request('status', { teamId: created.teamId });
   assert.equal(status.rootTurnState, 'aborted');
   await assert.rejects(host.client.request('send', { teamId: created.teamId, inputId: 'after-stop', text: 'Synthetic continuation.' }), { code: 'CONTINUATION_REQUIRED' });
 });
