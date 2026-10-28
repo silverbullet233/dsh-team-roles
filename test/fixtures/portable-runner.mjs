@@ -8,9 +8,10 @@ import { createConnection } from 'node:net';
 
 const [runtimeArgument, home, profileName, mode = 'positive'] = process.argv.slice(2);
 const runtime = await realpath(runtimeArgument);
-const app = await import(pathToFileURL(join(runtime, 'packages/boot/app-boot/lib/index.js')).href);
+const nativeRequire = createRequire(join(runtime, 'package.json'));
+const app = await import(pathToFileURL(nativeRequire.resolve('@deepseek-ai/dsh-app-boot')).href);
 const profileDir = join(home, 'profiles', profileName);
-const installAnchor = join(runtime, 'apps/cli/package.json');
+const installAnchor = join(runtime, 'package.json');
 const profile = app.loadProfileDirectory('dsh', profileDir, installAnchor);
 const facts = { name: profileName, dir: profileDir, installAnchor, patchPath: join(profileDir, 'cordis.patch.yml'), cwd: join(home, 'keyless/fixture'), home, startedBundles: profile.bundles ?? ['dsh-team-roles'], overlays: [] };
 await mkdir(facts.cwd, { recursive: true });
@@ -24,7 +25,6 @@ const ctx = await app.boot('portability', join(profileDir, 'cordis.yml'), patche
   ctx.provide('appReady', { onReady: listener => { listener(); return () => {}; } });
   await ctx.plugin(app.PluginPackages, { resolution });
   const { mountPortableStack } = await import('./portable-stack.mjs');
-  const nativeRequire = createRequire(join(runtime, 'node_modules/.pnpm/node_modules/__fixture__.cjs'));
   fixture = await mountPortableStack(ctx, { root: join(home, 'keyless'), nativeImport: specifier => import(pathToFileURL(nativeRequire.resolve(specifier)).href) });
   const [{ default: ConfigEditor }, { default: Settings }] = await Promise.all([import('@deepseek-ai/dsh-config-editor'), import('@deepseek-ai/dsh-settings')]);
   await ctx.plugin(ConfigEditor); await ctx.plugin(Settings);
@@ -42,7 +42,7 @@ const call = (method, params = {}) => new Promise((resolve, reject) => {
 try {
   if (mode === 'missing-api') {
     const entry = [...ctx.loader.entries()].find(entry => entry.options.id === 'dsh-agent-team');
-    await assert.rejects(async () => { await entry.fiber.await(); }, error => error.code === 'DSH_RUNTIME_INCOMPATIBLE' && /agent.model.select\/current/.test(error.message));
+    await assert.rejects(async () => { await entry.fiber.await(); }, error => error.code === 'DSH_RUNTIME_INCOMPATIBLE' && /agent.model.select/.test(error.message));
     assert.equal(ctx.get('teamRoleSettings'), undefined);
     await assert.rejects(lstat(socketPath), error => error.code === 'ENOENT');
     console.log(JSON.stringify({ missingApiRejected: true, code: 'DSH_RUNTIME_INCOMPATIBLE', socketOpened: false, nativeRequests: fixture.requests.length }));
@@ -50,7 +50,8 @@ try {
   assert(ctx.get('teamRoleSettings'), 'Packed native settings service must activate');
   const health = await call('health');
   assert.equal(health.ok, true); assert.equal(health.roles.configured, false);
-  assert(health.runtime.runtimeDirectory.startsWith(runtime));
+  assert.equal(health.runtime.runtimeDirectory, runtime);
+  assert.equal(health.runtime.packageVersion, '0.2.2-alpha.2');
   const { until } = await import('./portable-stack.mjs');
   const nativeTeam = await call('create', { key: 'native-default', cwd: fixture.fixtureRoot, text: 'Synthetic unconfigured native Lead.' });
   const nativeLead = ctx.agents.get(nativeTeam.teamId);
@@ -96,7 +97,8 @@ try {
   assert.equal((await lstat(ownPackage.dir)).isSymbolicLink(), false);
   assert.equal((await readFile(join(ownPackage.dir, 'package.json'), 'utf8')).includes('silverbullet233/dsh-team-roles/'), false);
   const moduleTargets = health.runtime.resolvedModules;
-  assert(Object.values(moduleTargets).every(path => path.startsWith(runtime + '/')));
+  const installation = await realpath(join(runtime, '../../..'));
+  assert(Object.values(moduleTargets).every(path => path.startsWith(installation + '/')));
   const evidence = { package: ownPackage.name, version: ownPackage.version, packageDir: ownPackage.dir, runtime: health.runtime.runtimeDirectory, nativeModuleIdentityChecked: true, manualPluginLinks: false, configuredBeforeSave: health.roles.configured, nativeEmptyTeamCreated: true, inheritedRoute: nativeSelection, clearedCatalogSaved: true, existingManagedBindingRetained: true, settingsSaved: true, staleRejected: true, invalidRejected: true, teamId: created.teamId, memberId: child.member.id, members: status.members.length, keylessRequests: fixture.requests.length };
   await writeFile(join(home, 'evidence.json'), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify(evidence));

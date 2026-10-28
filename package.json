@@ -1,10 +1,11 @@
 {
   "name": "dsh-team-roles",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Durable role profiles, native Team integration and native Web settings for DSH",
   "type": "module",
   "engines": {
-    "node": ">=24.9.0"
+    "node": ">=24.9.0",
+    "dsh": "0.2.2-alpha.2"
   },
   "exports": {
     ".": "./src/host.mjs",
@@ -32,18 +33,17 @@
     }
   },
   "scripts": {
-    "test": "npm run test:unit",
+    "test": "npm run test:unit && npm run test:native && npm run test:runtime && node --test test/release/*.test.mjs",
     "test:unit": "node --test test/auth/*.test.mjs test/bridge/*.test.mjs test/roles/*.test.mjs test/native/synthetic-fixtures.test.mjs",
     "test:native": "node --test test/native/shared-session.test.mjs test/native/validation-scope.test.mjs test/native/settings.test.mjs test/native/host.test.mjs",
     "test:runtime": "node --test test/runtime/*.test.mjs",
     "check": "node scripts/check.mjs",
     "build": "node scripts/build.mjs",
     "pack:check": "npm pack --dry-run",
-    "runtime:connect": "node scripts/runtime/connect.mjs",
     "runtime:verify": "node scripts/runtime/verify.mjs",
     "prepack": "node scripts/check-package.mjs",
-    "build:release": "node scripts/ci/build.mjs",
-    "test:release": "node --test test/auth/profile-backup-safety.test.mjs test/auth/read-owner-file.test.mjs test/bridge/*.test.mjs test/roles/admission.test.mjs test/roles/config.test.mjs test/roles/lead-store.test.mjs test/roles/lifecycle.test.mjs test/roles/package.test.mjs test/roles/state.test.mjs test/native/synthetic-fixtures.test.mjs test/release/*.test.mjs"
+    "build:release": "npm run build",
+    "test:release": "npm test"
   },
   "files": [
     "src",
@@ -54,19 +54,57 @@
     "docs/auth.md",
     "scripts/check-package.mjs",
     "scripts/runtime/verify.mjs",
-    "scripts/runtime/manifest.mjs",
-    "scripts/runtime/source-build-manifest.json",
     "scripts/live/host-fixture.mjs",
     "test/fixtures/audit.mjs",
     "test/fixtures/synthetic-files.mjs",
     "cordis.patch.yml",
-    "runtime-lock.json",
     "README.md",
     "LICENSE",
     "CONTRIBUTING.md"
   ],
   "devDependencies": {
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "@deepseek-ai/cordis": "4.0.6-alpha.1",
+    "@deepseek-ai/cordis-plugin-include": "1.0.11-alpha.1",
+    "@deepseek-ai/cordis-plugin-timer": "1.1.8-alpha.1",
+    "@deepseek-ai/cosmokit": "1.8.7-alpha.1",
+    "@deepseek-ai/dsh": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-agent": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-agent-loop": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-agent-loop-testkit": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-agent-preset": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-api-gateway": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-api-remote-access": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-app-boot": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-config-editor": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-credentials": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-credentials-local": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-experimental-agent-team": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-hmr": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-launch-environment": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-llm": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-persona": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-session": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-session-projection": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-session-query": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-settings": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-storage": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-storage-json": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-subagent": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-tool-subagent": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-tools": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-typert-registry": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-user-approval": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-web-frontend": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-workspace": "0.2.2-alpha.2",
+    "@deepseek-ai/schemastery": "3.18.6-alpha.1"
   },
   "license": "Apache-2.0",
   "repository": {
@@ -81,19 +119,23 @@
     "zod": "4.4.3"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-session": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-experimental-agent-team": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-api-gateway": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-credentials": "0.2.1-rc.3",
-    "@deepseek-ai/dsh-credentials-local": "0.2.1-rc.3",
-    "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/schemastery": "3.18.5",
-    "react": "^18.2.0"
+    "@deepseek-ai/dsh-agent": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-session": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-tools": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-experimental-agent-team": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-api-gateway": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-credentials": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-credentials-local": "0.2.2-alpha.2",
+    "@deepseek-ai/cordis": "4.0.6-alpha.1",
+    "@deepseek-ai/schemastery": "3.18.6-alpha.1",
+    "react": "^18.2.0",
+    "@deepseek-ai/dsh": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-app-boot": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-session-projection": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-web-frontend": "0.2.2-alpha.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-agent": {
@@ -133,6 +175,18 @@
       "optional": true
     },
     "react": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-app-boot": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session-projection": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-web-frontend": {
       "optional": true
     }
   }

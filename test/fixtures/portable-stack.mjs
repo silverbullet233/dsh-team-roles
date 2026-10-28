@@ -4,7 +4,6 @@ import { once } from 'node:events';
 import { createSyntheticAuditor } from './audit.mjs';
 import { syntheticFiles } from './synthetic-files.mjs';
 
-export const pinnedSha = '22ddee3792402c3e70ec5f86a63c3e3e895a2f60';
 export const fixtureRoles = {
   lead: { description: 'Coordinate synthetic fixture work.', instructions: 'Use only synthetic text and native Team coordination. Preserve member identity on follow-up.', provider: 'fixture-lead', model: 'fixture-model', reasoningEffort: 'max' },
   left: { description: 'Compute the left synthetic fixture.', instructions: 'LEFT_ROLE_V1: Process only the synthetic left fixture.', provider: 'fixture-left', model: 'fixture-model', reasoningEffort: 'max' },
@@ -31,7 +30,7 @@ export async function until(check, { timeout = 10000, description = 'native stat
   }
 }
 
-/** Keyless actual pinned native stack. Only browser credentials are deterministic in-memory fixtures. */
+/** Keyless actual released native stack. Only browser credentials are deterministic in-memory fixtures. */
 export async function mountPortableStack(ctx, { root, respond = () => textChunks('SYNTHETIC_COMPLETE'), maxRequests = 40, onRequest, nativeImport = specifier => import(specifier) } = {}) {
   const [cordis, testkit, agentLoop, persistence, query, subagent, spawn, team, teamTools, typert, gateway, access, connection, storage, storageJson, storageDomain, workspace, approval, llm, tools] = await Promise.all([
     import('@deepseek-ai/cordis'), nativeImport('@deepseek-ai/dsh-agent-loop-testkit'), import('@deepseek-ai/dsh-agent-loop'), import('@deepseek-ai/dsh-session-persistence-jsonl'), import('@deepseek-ai/dsh-session-query'), import('@deepseek-ai/dsh-subagent'), import('@deepseek-ai/dsh-subagent-spawn-in-process'), import('@deepseek-ai/dsh-experimental-agent-team'), import('@deepseek-ai/dsh-experimental-tool-agent-team'), import('@deepseek-ai/dsh-typert-registry'), import('@deepseek-ai/dsh-api-gateway'), import('@deepseek-ai/dsh-api-remote-access'), import('@deepseek-ai/dsh-client-connection'), import('@deepseek-ai/dsh-storage'), import('@deepseek-ai/dsh-storage-json'), import('@deepseek-ai/dsh-storage-domain'), import('@deepseek-ai/dsh-workspace'), import('@deepseek-ai/dsh-user-approval'), import('@deepseek-ai/dsh-llm'), import('@deepseek-ai/dsh-tools'),

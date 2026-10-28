@@ -1,60 +1,34 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
-import { digestFiles, inspectSourceBuild, resolveInstalledEntrypoint, sourceRelativeEntry } from '../../scripts/runtime/manifest.mjs';
-import { verifyRuntime } from '../../scripts/runtime/verify.mjs';
-
-test('the installed complete native build and matching Web verify through the actual public imports', async () => {
-  const result = await verifyRuntime();
-  assert.equal(result.sourceSha, '22ddee3792402c3e70ec5f86a63c3e3e895a2f60');
-  assert.equal(result.build.frontend, true);
-  assert.equal(result.capabilities.generatedReflection, true);
-  assert.match(result.resolvedModules.sessionReflection, /packages\/api\/session-controller\/lib\/typert\.host\.js$/);
+import { requireSupportedVersion, requireCapabilities, verifyRuntime } from '../../scripts/runtime/verify.mjs';
+const native = async () => {
+ const [agent,controller,team,projections,boot,reflection]=await Promise.all([import('@deepseek-ai/dsh-agent'),import('@deepseek-ai/dsh-api-session-controller'),import('@deepseek-ai/dsh-experimental-agent-team'),import('@deepseek-ai/dsh-session-projection'),import('@deepseek-ai/dsh-app-boot'),import('@deepseek-ai/dsh-api-session-controller/typert')]);
+ return {agent,controller,team,projections,boot,reflection};
+};
+test('the supported official npm runtime exposes matching APIs, reflection and Web assets', async () => {
+ const result=await verifyRuntime();assert.equal(result.packageVersion,'0.2.2-alpha.2');assert.equal(result.sourceSha,null);assert.equal(result.build.kind,'official-npm-release');assert.equal(result.capabilities.generatedReflection,true);
+ assert.match(result.resolvedModules.sessionReflection,/dsh-api-session-controller\/lib\/typert.host.js$/);
 });
-
-test('a different source commit is rejected before its missing build can be accepted', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-wrong-source-'));
-  try {
-    execFileSync('git', ['init', '--initial-branch=fixture', '--quiet', root]);
-    execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '--no-gpg-sign', '--quiet', '-m', 'Synthetic source'], { cwd: root });
-    assert.throws(() => inspectSourceBuild(root), /DSH source SHA differs/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+test('only the exact validated release version is accepted', () => {
+ requireSupportedVersion('0.2.2-alpha.2');
+ for(const version of ['0.2.1-rc.3','0.2.1-rc.4','0.2.2-alpha.3','0.2.2']) assert.throws(()=>requireSupportedVersion(version),/unsupported/);
 });
-
-test('artifact digests are deterministic and bind filenames and file bytes', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-artifact-digest-'));
-  try {
-    writeFileSync(join(root, 'first.js'), 'one');
-    writeFileSync(join(root, 'second.js'), 'two');
-    const before = digestFiles(root, ['first.js', 'second.js']);
-    assert.deepEqual(digestFiles(root, ['second.js', 'first.js']), before);
-    writeFileSync(join(root, 'first.js'), 'changed');
-    assert.notEqual(digestFiles(root, ['first.js', 'second.js']).sha256, before.sha256);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+test('missing public model-selection APIs fail with an actionable capability name', async () => {
+ const modules=await native();
+ assert.throws(()=>requireCapabilities({...modules,agent:{AgentModel:class {},modelSelectionProjectionDefinition:modules.agent.modelSelectionProjectionDefinition}}),/agent.model.select/);
 });
-
-test('an outside public import is rejected even when hidden behind a local symlink', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-import-root-'));
-  const outside = mkdtempSync(join(tmpdir(), 'dsh-import-outside-'));
-  try {
-    const entry = join(outside, 'index.js');
-    writeFileSync(entry, 'export {};');
-    symlinkSync(entry, join(root, 'index.js'));
-    assert.throws(() => sourceRelativeEntry(root, join(root, 'index.js')), /outside the verified source checkout/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-    rmSync(outside, { recursive: true, force: true });
-  }
+test('missing session reflection and controller calls cannot pass capability verification', async () => {
+ const modules=await native();
+ assert.throws(()=>requireCapabilities({...modules,reflection:{TYPERT:{invocations:[]}}}),/session\/create reflection/);
+ assert.throws(()=>requireCapabilities({...modules,controller:{SessionController:class {}}}),/SessionController.create/);
 });
-
-test('unsupported executable wrappers are rejected without running them', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-untrusted-shim-'));
-  try {
-    const path = join(root, 'dsh');
-    writeFileSync(path, '#!/bin/sh\necho should-not-run\n');
-    assert.throws(() => resolveInstalledEntrypoint(path), /not a supported verifiable pnpm shim/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+test('a profile cannot use a different CLI version or bypass installation module identity', async () => {
+ const { mkdtemp,writeFile,rm }=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const root=await mkdtemp(join(tmpdir(),'dsh-release-anchor-'));const anchor=join(root,'package.json');
+ try {
+  await writeFile(anchor,JSON.stringify({name:'@deepseek-ai/dsh',version:'0.2.1-rc.4'}));
+  await assert.rejects(verifyRuntime({context:{get:name=>name==='profileContext'?{installAnchor:anchor}:undefined}}),{code:'DSH_RUNTIME_INCOMPATIBLE'});
+  await writeFile(anchor,JSON.stringify({name:'@deepseek-ai/dsh',version:'0.2.2-alpha.2'}));
+  await assert.rejects(verifyRuntime({context:{get:name=>name==='profileContext'?{installAnchor:anchor}:{packageOf:()=>({dir:root})}}}),/differs from the serving installation/);
+ } finally {await rm(root,{recursive:true,force:true});}
 });

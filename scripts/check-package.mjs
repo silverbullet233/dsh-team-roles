@@ -8,7 +8,7 @@ export async function checkPackage(root) {
   if (pkg.private === true) throw new Error('Release packaging requires private to be unset in package.json.');
   const required = new Set([
     ...Object.values(pkg.exports), pkg.dsh.bundle.patch,
-    'runtime-lock.json', 'scripts/runtime/source-build-manifest.json',
+    'scripts/runtime/verify.mjs',
   ]);
   for (const file of required) {
     let info;

@@ -2,7 +2,7 @@
 let plugin;
 try { plugin = await import('./native-host.mjs'); }
 catch (cause) {
-  const error = new Error(`Cannot load dsh-team-roles native peers: ${cause.message}. Install this package through the compatible official dsh profile; keep the launcher runtime resolver enabled. Do not install a separate registry DSH runtime or create manual dependency links.`, { cause });
+  const error = new Error(`Cannot load dsh-team-roles native peers: ${cause.message}. Install this package through the supported official dsh release profile; keep the launcher runtime resolver enabled. Do not install a separate registry DSH runtime or create manual dependency links.`, { cause });
   error.code = 'DSH_NATIVE_PEERS_UNAVAILABLE';
   throw error;
 }
