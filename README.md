@@ -9,22 +9,22 @@ Role configuration for native DeepSeek Harness Teams. Edit role instructions and
 ## Requirements
 
 - Node.js **>=24.9.0** and UID-owned Unix sockets; macOS is validated.
-- The complete official DSH source build at **`22ddee3792402c3e70ec5f86a63c3e3e895a2f60`**, including matching Web artifacts. The published `dsh-v0.2.1-rc.3` lacks required `agent.model.select/current` APIs despite sharing its version string.
+- Official npm runtime **`@deepseek-ai/dsh@0.2.2-alpha.2`**. This exact release is supported; other versions are not certified. Earlier `0.2.1-rc.3` and `rc.4` lack required model-selection APIs.
 - The native Web/base profile with **`@deepseek-ai/dsh-experimental-agent-team-profile`** enabled, and existing native provider registrations for any configured routes.
 
 See [runtime requirements](docs/runtime.md) for the required services. Installing this plugin does not install or upgrade DSH.
 
 ## Installation
 
-Use the built `.tgz` from a published [release](https://github.com/silverbullet233/dsh-team-roles/releases):
+Install/select the supported DSH release, then add the built plugin tarball:
 
 ```sh
-dsh plugin --profile web add \
-  'https://github.com/silverbullet233/dsh-team-roles/releases/download/v0.3.0/dsh-team-roles-0.3.0.tgz' \
-  --ignore-scripts
+npm install --global @deepseek-ai/dsh@0.2.2-alpha.2
+dsh plugin --profile web add /path/to/dsh-team-roles-0.4.0.tgz --ignore-scripts
+dsh web
 ```
 
-A downloaded file can also be installed with `dsh plugin --profile web add /path/to/dsh-team-roles-0.3.0.tgz --ignore-scripts`. Source archives and direct Git tag installs omit the built Web asset. Installed packages require no manual dependency links.
+Enable the official Agent Team profile first if it is not active: `dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-profile@0.2.2-alpha.2 --ignore-scripts`. Use built tarballs from [releases](https://github.com/silverbullet233/dsh-team-roles/releases) or a local build; source archives omit the Web asset. No source checkout, manual dependency links or runtime connector is required.
 
 ## Configuration
 
@@ -42,8 +42,8 @@ In a clean source checkout:
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
-npm run build:release
-npm run test:release
+npm run build
+npm test
 ```
 
-These commands need public network access, but no running DSH or provider credentials. See [CONTRIBUTING.md](CONTRIBUTING.md) for native tests and release maintenance. Local integrations can use the [private IPC API](docs/protocol.md).
+Dependencies and tests use the released npm packages, with no running user DSH or provider credentials required. See [CONTRIBUTING.md](CONTRIBUTING.md) for native tests and release maintenance. Local integrations can use the [private IPC API](docs/protocol.md).

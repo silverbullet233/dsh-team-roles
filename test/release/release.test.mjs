@@ -5,14 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { releaseVersion } from '../../scripts/release/version.mjs';
 import { publishDraft, sha256 } from '../../scripts/release/publish-draft.mjs';
-import { verifyMetadata } from '../../scripts/ci/native-metadata.mjs';
 const pkg = { name: 'dsh-team-roles', version: '0.3.0' };
 const commit = 'a'.repeat(40);
-test('tag/version and pinned metadata failures stop before release execution', () => {
+test('tag/version failures stop before release execution', () => {
   assert.equal(releaseVersion(pkg, 'v0.3.0').tarball, 'dsh-team-roles-0.3.0.tgz');
   for (const tag of ['v0.2.0', '0.3.0', 'v0.3.0;bad']) assert.throws(() => releaseVersion(pkg, tag), /Tag must/);
   assert.throws(() => releaseVersion({ ...pkg, version: '../bad' }), /valid/);
-  assert.throws(() => verifyMetadata(Buffer.from('unverified metadata')), /digest mismatch/);
 });
 async function fixture(t, existing) {
   const directory = await mkdtemp(join(tmpdir(), 'release-draft-test-'));

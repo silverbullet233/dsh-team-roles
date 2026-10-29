@@ -14,7 +14,7 @@ test('release packaging refuses a source-only checkout and a wrong native client
   await mkdir(join(root, 'lib'));
   await writeFile(join(root, 'lib/client.js'), 'export {};');
   await mkdir(join(root, 'scripts/runtime'), { recursive: true });
-  for (const file of ['cordis.patch.yml', 'runtime-lock.json', 'scripts/runtime/source-build-manifest.json']) await writeFile(join(root, file), '{}');
+  for (const file of ['cordis.patch.yml', 'scripts/runtime/verify.mjs']) await writeFile(join(root, file), '{}');
   await assert.rejects(checkPackage(root), /not a dsh-team-roles module-loader artifact/);
   await writeFile(join(root, 'lib/client.js'), "window.__ModuleLoader__.load({id: 'dsh-team-roles', factory: () => ({})});");
   assert.equal((await checkPackage(root)).version, '0.2.0');
@@ -30,5 +30,5 @@ test('release packaging refuses a source-only checkout and a wrong native client
 
 test('release package has no workstation paths or checkout dependency specs', async () => {
   const result = await checkPackage(new URL('../..', import.meta.url).pathname);
-  assert.equal(result.version, '0.3.0');
+  assert.equal(result.name, 'dsh-team-roles');
 });

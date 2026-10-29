@@ -40,6 +40,6 @@ JS
 
 The response contains `result.teamId` for subsequent `status`, `send` or `result` requests. Without configured roles, `create` preserves native model inheritance.
 
-The existing durable idempotency and continuation semantics remain unchanged. A transport failure can leave admission uncertain; keep the original key/input ID and inspect status. Disconnect/EOF never cancels native work. `stop` retains file changes. Unknown costs and usage remain null. `selected` can be null for unloaded members while `lastRequest` remains durable evidence. Only text input is supported.
+The existing durable idempotency and continuation semantics remain unchanged. A transport failure can leave admission uncertain; keep the original key/input ID and inspect status. Disconnect/EOF never cancels native work. `stop` requests cancellation of active turns and retains inboxes and file changes; native child-result delivery can wake the Lead again. Unknown costs and usage remain null. `selected` can be null for unloaded members while `lastRequest` remains durable evidence. Only text input is supported.
 
 Settings writes use the authenticated native Typert Gateway and Settings editor, not this IPC surface. The IPC API does not grant access to modify roles or native provider credentials.

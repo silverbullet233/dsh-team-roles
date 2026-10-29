@@ -6,4 +6,4 @@ When needed, mount it before native Connection/LLM services with an explicit can
 
 Native Host, Origin and Cookie checks remain active. Credential values stay inside the host and are never returned by IPC health/status.
 
-`registeredRouteCatalog` reports registered route/model/effort availability; `nativeCredentialPresence` reports presence and writability only. Neither starts inference. `scripts/live/catalog.mjs` is an optional route-discovery utility for an explicitly prepared native environment; its result does not establish successful inference or collaboration.
+`registeredRouteCatalog` reports registered route/model/effort availability; `nativeCredentialPresence` reports presence and writability only. Neither starts inference.

@@ -3,19 +3,20 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 
 const [runtimeArg, tarballArg, homeArg] = process.argv.slice(2);
-if (!runtimeArg || !tarballArg) throw new Error('Usage: node scripts/test-portable-package.mjs <compatible-runtime> <built-tarball> [new-temporary-home]');
+if (!runtimeArg || !tarballArg) throw new Error('Usage: node scripts/test-portable-package.mjs <released-cli-package-directory> <built-tarball> [new-temporary-home]');
 const runtime = await realpath(runtimeArg);
 const tarball = await realpath(tarballArg);
-const home = homeArg ? resolve(homeArg) : await mkdtemp(join(tmpdir(), 'dsh-packed-profile-'));
+const home = homeArg ? resolve(homeArg) : await mkdtemp('/tmp/dsh-packed-');
 if (homeArg) await mkdir(home); // Refuse to overwrite an existing test profile.
 const profileName = 'role-package';
 const profileDir = join(home, 'profiles', profileName);
-const app = await import(pathToFileURL(join(runtime, 'packages/boot/app-boot/lib/index.js')).href);
+const nativeRequire = createRequire(join(runtime, 'package.json'));
+const app = await import(pathToFileURL(nativeRequire.resolve('@deepseek-ai/dsh-app-boot')).href);
 app.initProfile(profileDir, []);
 await writeFile(join(profileDir, 'cordis.yml'), '[]\n');
 const fixtures = join(profileDir, 'fixture-code');
@@ -34,7 +35,7 @@ const run = async (name, args) => {
   if (code !== 0) throw new Error(`${name} exited ${code}; see ${logPath}\n${(await readFile(logPath, 'utf8')).slice(-6000)}`);
   return await readFile(logPath, 'utf8');
 };
-await run('install', [join(runtime, 'apps/cli/lib/bin.js'), 'plugin', '--profile', profileName, 'add', tarball, '--ignore-scripts', '--registry=https://registry.npmjs.org']);
+await run('install', [join(runtime, 'lib/bin.js'), 'plugin', '--profile', profileName, 'add', tarball, '--ignore-scripts', '--registry=https://registry.npmjs.org']);
 const runner = join(fixtures, 'portable-runner.mjs');
 await run('positive', [runner, runtime, home, profileName]);
 await run('missing-api', [runner, runtime, home, profileName, 'missing-api']);

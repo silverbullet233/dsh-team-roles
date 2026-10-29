@@ -6,12 +6,9 @@ import { isAbsolute, relative, sep } from 'node:path';
 import { BridgeError, object, text } from './errors.mjs';
 import { digest } from './private-store.mjs';
 
-export const SOURCE_SHA = '22ddee3792402c3e70ec5f86a63c3e3e895a2f60';
-
 /** Serialization is admission-only. DSH remains the sole execution scheduler. */
 export class SessionBridge {
-  constructor({ native, store, allowedRoots, sourceSha = SOURCE_SHA, runtimeEvidence = null }) {
-    if (sourceSha !== SOURCE_SHA) throw new BridgeError('SOURCE_MISMATCH', 'This bridge requires the pinned DSH source SHA.');
+  constructor({ native, store, allowedRoots, sourceSha = null, runtimeEvidence = null }) {
     if (!Array.isArray(allowedRoots) || allowedRoots.length === 0 || allowedRoots.some(root => !isAbsolute(root))) {
       throw new BridgeError('INVALID_CONFIG', 'allowedRoots must contain explicit absolute workspace roots.');
     }
