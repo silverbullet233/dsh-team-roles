@@ -110,7 +110,7 @@ export class ManagedTeams {
       try {
         const state = await this.native.snapshot(record.sessionId);
         const activity = state.teamActivity;
-        const coldComplete = state.runtimeState === 'unloaded' && state.rootTurnCompleted && !state.team?.failure && activity.pendingTasks === 0
+        const coldComplete = state.runtimeState === 'unloaded' && state.team !== null && activity.members.some(member => member.id === record.sessionId) && state.rootTurnCompleted && !state.team?.failure && activity.pendingTasks === 0
           && activity.members.every(member => member.observationAvailable && !member.openTurn && member.pendingInputs === 0 && member.lastTurnOutcome === 'completed' && member.phase !== 'provisioning');
         if (activity.members.some(member => member.openTurn || member.pendingInputs !== 0 || member.phase === 'provisioning')
           || activity.pendingTasks > 0 || state.observation.open || ['running', 'provisioning'].includes(activity.state) || (activity.state === 'unknown' && !coldComplete)) unsettled.push(record.sessionId);

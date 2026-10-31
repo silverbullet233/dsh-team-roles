@@ -1,7 +1,8 @@
 /** Ordinary official Web bundle with bounded, keyless test-owned services. */
 import { mkdir, writeFile, readFile, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { boot, loadProfileDirectory, readProfilePatches, createRuntimeResolution, PluginPackages } from '@deepseek-ai/dsh-app-boot';
+import assert from 'node:assert/strict';
+import { boot, composeEntries, loadProfileDirectory, readProfilePatches, createRuntimeResolution, PluginPackages } from '@deepseek-ai/dsh-app-boot';
 import { CredentialProvider } from '@deepseek-ai/dsh-credentials';
 import { LlmAdapter } from '@deepseek-ai/dsh-llm';
 import { textChunks } from './native-harness.mjs';
@@ -12,6 +13,9 @@ const profile = loadProfileDirectory('dsh', dir, installAnchor);
 const facts = { name: 'owned-web-test', dir, installAnchor, patchPath: join(dir, 'cordis.patch.yml'), cwd: await realpath(join(home, 'fixture')), home, startedBundles: profile.layers.map(layer => layer.packageName), overlays: [] };
 await mkdir(facts.cwd, { recursive: true });
 const patches = readProfilePatches('dsh', facts);
+const composed = composeEntries([patches]);
+assert.equal(composed.find(entry => entry.id === 'credentials')?.disabled, true, 'Disable the native file credential row before any test host starts');
+assert(composed.some(entry => entry.name === 'cordis:fixtureCredentials' && !entry.disabled), 'Insert the in-memory fixture as a distinct native row');
 const resolution = await createRuntimeResolution({ installAnchor, profile, home });
 class FixtureCredentials extends CredentialProvider {
   async resolve() { return undefined; }
