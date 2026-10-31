@@ -16,16 +16,18 @@ See [runtime requirements](docs/runtime.md) for the required services. Installin
 
 ## Installation
 
-Version **0.5.0 is an unreleased candidate**. Published 0.3.0 uses an older runtime and private IPC; main 0.4.0 is also unpublished. Build this branch and install its actual local tarball with the exact supported DSH CLI:
+Install the built **[0.5.0 release](https://github.com/silverbullet233/dsh-team-roles/releases/tag/v0.5.0)** with the exact supported DSH CLI. Download the versioned assets and check their SHA-256 checksum first:
 
 ```sh
-npm ci --ignore-scripts --no-audit --no-fund
-npm run build
-npm pack --pack-destination /absolute/output/directory
-dsh plugin --profile web add /absolute/output/directory/dsh-team-roles-0.5.0.tgz --ignore-scripts
+mkdir dsh-team-roles-0.5.0
+cd dsh-team-roles-0.5.0
+curl -fL https://github.com/silverbullet233/dsh-team-roles/releases/download/v0.5.0/dsh-team-roles-0.5.0.tgz -o dsh-team-roles-0.5.0.tgz
+curl -fL https://github.com/silverbullet233/dsh-team-roles/releases/download/v0.5.0/SHA256SUMS -o SHA256SUMS
+shasum -a 256 -c SHA256SUMS
+dsh plugin --profile web add "$(pwd)/dsh-team-roles-0.5.0.tgz" --ignore-scripts
 ```
 
-Enable the official Agent Team profile if needed: `dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-profile@0.2.2-alpha.2 --ignore-scripts`. Source archives omit the built Web asset. Installation does not upgrade a global runtime. A Codex-owned profile uses the same ordinary Web/base and native Agent Team bundles, with its own Harness home and persistent data.
+Enable the official Agent Team profile if needed: `dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-profile@0.2.2-alpha.2 --ignore-scripts`. Use the attached versioned `.tgz`; GitHub's automatic source archives omit the built Web asset. Do not substitute a floating `latest` URL or a source branch for normal installation. Host 0.3.0 uses an older runtime and private IPC and is incompatible with the native-Gateway client. Installation does not upgrade a global runtime. A Codex-owned profile uses the same ordinary Web/base and native Agent Team bundles, with its own Harness home and persistent data.
 
 ## Configuration
 
