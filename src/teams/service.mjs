@@ -110,19 +110,28 @@ export class ManagedTeams {
       try {
         const state = await this.native.snapshot(record.sessionId);
         const activity = state.teamActivity;
+        const unresolved = !Array.isArray(state.members) || state.members.some(binding => !binding.memberId || binding.error || !activity.members.some(member => member.id === binding.memberId));
         const coldComplete = state.runtimeState === 'unloaded' && state.team !== null && activity.members.some(member => member.id === record.sessionId) && state.rootTurnCompleted && !state.team?.failure && activity.pendingTasks === 0
           && activity.members.every(member => member.observationAvailable && !member.openTurn && member.pendingInputs === 0 && member.lastTurnOutcome === 'completed' && member.phase !== 'provisioning');
-        if (activity.members.some(member => member.openTurn || member.pendingInputs !== 0 || member.phase === 'provisioning')
+        if (state.consistent !== true || unresolved || activity.members.some(member => member.openTurn || member.pendingInputs !== 0 || member.phase === 'provisioning' || (member.runtimeState === 'unloaded' && member.lastTurnOutcome !== 'completed'))
           || activity.pendingTasks > 0 || state.observation.open || ['running', 'provisioning'].includes(activity.state) || (activity.state === 'unknown' && !coldComplete)) unsettled.push(record.sessionId);
       } catch { unsettled.push(record.sessionId); }
     }
-    // Inspect unmanaged Web Sessions too, including their native inboxes.
+    // Inspect unmanaged Web Sessions too; empty inboxes alone do not settle an open turn or shared task.
     for (const agent of agents) {
       const projections = await this.native.projections(agent.id);
-      const inbox = projections?.kind === 'sequenced' ? projections.values.inbox : null;
-      if (inbox === null || inbox === undefined || (inbox['next-turn']?.length ?? 0) + (inbox['next-step']?.length ?? 0) > 0) unsettled.push(agent.id);
+      const values = projections?.kind === 'sequenced' ? projections.values : null;
+      const inbox = values?.inbox;
+      const live = this.native.ctx.sessions.get(agent.id);
+      if (inbox === null || inbox === undefined || values?.dshBridge === undefined || values.dshBridge.open
+        || (inbox['next-turn']?.length ?? 0) + (inbox['next-step']?.length ?? 0) > 0
+        || values.agentTeam?.tasks?.some(task => ['pending', 'in_progress'].includes(task.status))
+        || values.agentTeam?.members?.some(member => member.phase === 'provisioning')
+        || !live || live.seq - 1 !== projections.asOfSeq) unsettled.push(agent.id);
     }
-    const runningNow = this.native.ctx.agents.list().filter(agent => agent.status === 'running').map(agent => agent.id);
+    const agentsNow = this.native.ctx.agents.list();
+    unsettled.push(...agentsNow.filter(agent => !agents.includes(agent)).map(agent => agent.id));
+    const runningNow = agentsNow.filter(agent => agent.status === 'running').map(agent => agent.id);
     busy.push(...runningNow.filter(id => !busy.includes(id)));
     return { safeToStop: (this.native.roles?.tails?.size ?? 0) === 0 && this.pending.size <= 1 && (this.httpAdmissions ?? 0) <= 1 && busy.length === 0 && unsettled.length === 0,
       running: busy, unsettled: [...new Set(unsettled)], admissions: Math.max(0, this.pending.size - 1) };
