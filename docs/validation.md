@@ -7,6 +7,7 @@ Validated on macOS with Node 26.0.0 and the exact official DSH 0.2.2-alpha.2 npm
 - Real Node Connection/Gateway over HTTP/Mux: launch-token exchange, role-managed Team creation, duplicate create, processing/result distinction, disconnect without cancellation, fresh API Peer and shutdown guard.
 - Exact runtime and release-safety suites; built tarball install/load in a fresh native profile, negative API checks and outside-launcher rejection.
 - Browser inspected in Chrome using the ordinary official Web/base and Team bundles. Settings → Team roles created a synthetic Team, Open Team selected that same Session, and the native view showed KEYLESS_WEB_COMPLETE with the configured fixture model.
+- Final Chrome acceptance used the companion client's owned instance: native creation returned one Team receipt, Open Team closed Settings and selected its completed Session with NATIVE_OWNED_E2E_COMPLETE, and reload/reopening retained the same disabled request fields and receipt. The Settings dialog had no horizontal overflow. The fixture then shut down successfully through the client's native activity guard.
 
 The Web fixture has a read-only in-memory credential provider and a synthetic model. This certifies the integration path, not paid inference or all user-installed plugin combinations. Published host 0.3.0 is incompatible with the new client. Install the actual locally built host candidate first; publish/release only through a separate maintainer decision.
 
