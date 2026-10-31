@@ -61,9 +61,11 @@ export class ManagedTeams {
 
   async invoke(method, params) {
     switch (method) {
-      case 'health':
+      case 'health': {
         object(params, []);
-        return { ok: true, api: { name: API_NAME, version: API_VERSION, capabilities: CAPABILITIES }, sourceSha: this.sourceSha, runtime: this.runtimeEvidence, roles: await this.native.catalog?.() ?? null, transport: 'native-typert-gateway', service: 'native-session', modalities: ['text'], ownsExecution: false, host: { pid: process.pid, instanceId: process.env.DSH_OWNED_INSTANCE_ID ?? null } };
+        const home = this.native.ctx.get?.('profileContext')?.home;
+        return { ok: true, api: { name: API_NAME, version: API_VERSION, capabilities: CAPABILITIES }, sourceSha: this.sourceSha, runtime: this.runtimeEvidence, roles: await this.native.catalog?.() ?? null, transport: 'native-typert-gateway', service: 'native-session', modalities: ['text'], ownsExecution: false, host: { pid: process.pid, instanceId: process.env.DSH_OWNED_INSTANCE_ID ?? null, home: home ? await realpath(home) : null } };
+      }
       case 'create': return this.create(params);
       case 'send': return this.send(params);
       case 'status': return this.status(params);

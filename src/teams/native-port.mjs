@@ -104,7 +104,7 @@ export class NativeSessionPort {
       team,
       inbox,
       route: {
-        selected: agent?.model.current() ?? null,
+        selected: rootNow?.model.current() ?? null,
         lastUsed: projections.values.modelSelection?.lastUsed ?? null,
       },
       members: bindings,

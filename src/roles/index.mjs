@@ -291,9 +291,9 @@ export class DshRoles extends Service {
 
   /** Current selection is unknown for unloaded members; lastRequest remains durable evidence. */
   async status(memberId, binding) {
-    const live = this.ctx.agents.get(memberId);
     const session = this.ctx.sessions.get(memberId);
     const state = session === undefined ? await this.coldState(memberId) : this.projection.stateOf(session);
+    const live = this.ctx.agents.get(memberId);
     const actualBinding = state.bound ?? binding;
     if (actualBinding === undefined || actualBinding === null) throw new Error('member has no role binding');
     return {
