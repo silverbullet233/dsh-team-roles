@@ -11,7 +11,7 @@ test('installable Cordis bundle parses and native Settings can rehydrate its dec
   assert.equal(patches[0].insert[0].name, 'dsh-team-roles');
   assert.equal(patches[0].insert[0].id, 'dsh-agent-team');
   const schema = new Schema(Config.toJSON());
-  const result = schema['~standard'].validate({ stateDirectory: '/synthetic/state', socketPath: '/synthetic/ipc.sock', allowedRoots: ['/synthetic'], catalog: { leadRole: 'lead', roles: [{ name: 'lead', description: 'Synthetic role.', instructions: 'Synthetic instructions.', provider: 'fixture', model: 'fixture-model' }] } });
+  const result = schema['~standard'].validate({ stateDirectory: '/synthetic/state', allowedRoots: ['/synthetic'], catalog: { leadRole: 'lead', roles: [{ name: 'lead', description: 'Synthetic role.', instructions: 'Synthetic instructions.', provider: 'fixture', model: 'fixture-model' }] } });
   assert.equal(result.issues, undefined);
   assert.equal(result.value.catalog.get().roles[0].name, 'lead');
 });

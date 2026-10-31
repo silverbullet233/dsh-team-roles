@@ -29,7 +29,7 @@ async function executeAliasedSpawn(host, parent, callId) {
   });
 }
 
-test('bridge submissions appear in the same native SessionController and Team projections', { timeout: 20000 }, async (t) => {
+test('native Remote submissions appear in the same native SessionController and Team projections', { timeout: 20000 }, async (t) => {
   const host = await fixture(t);
   const workspace = await host.ctx.workspaceRegistry.create(host.fixtureRoot);
   const input = { key: 'synthetic-team-one', text: 'Add the synthetic values 2 and 3.', cwd: host.fixtureRoot, workspaceId: workspace.id };
@@ -280,7 +280,7 @@ test('native provisioning cannot bypass a managed Lead role reservation', { time
 });
 
 test('aliased native delegation and direct activation cannot create unreserved children under managed Leads or members', { timeout: 20000 }, async (t) => {
-  const host = await fixture(t, { bridge: false, respond: (options) => options.provider === 'fixture-left' ? 'hang' : textChunks('SYNTHETIC_PARENT_COMPLETE') });
+  const host = await fixture(t, { managed: false, respond: (options) => options.provider === 'fixture-left' ? 'hang' : textChunks('SYNTHETIC_PARENT_COMPLETE') });
   const leadId = 'synthetic-alias-lead';
   await host.ctx.dshRoles.prepareLead(leadId);
   await host.ctx.sessionController.create({ sessionId: leadId, cwd: host.fixtureRoot });
@@ -308,7 +308,7 @@ test('aliased native delegation and direct activation cannot create unreserved c
 });
 
 test('an independent native Web fork of a managed Session remains an ordinary unmanaged Session', { timeout: 20000 }, async (t) => {
-  const host = await fixture(t, { bridge: false });
+  const host = await fixture(t, { managed: false });
   const leadId = 'synthetic-web-fork-parent';
   await host.ctx.dshRoles.prepareLead(leadId);
   await host.ctx.sessionController.create({ sessionId: leadId, cwd: host.fixtureRoot });
@@ -327,7 +327,7 @@ test('an independent native Web fork of a managed Session remains an ordinary un
 });
 
 test('managed child admission remains closed while the role service unloads and valid role provisioning resumes after reload', { timeout: 20000 }, async (t) => {
-  const host = await fixture(t, { bridge: false });
+  const host = await fixture(t, { managed: false });
   const leadId = 'synthetic-role-reload-parent';
   await host.ctx.dshRoles.prepareLead(leadId);
   await host.ctx.sessionController.create({ sessionId: leadId, cwd: host.fixtureRoot });
@@ -356,7 +356,7 @@ test('managed child admission remains closed while the role service unloads and 
 
 test('aliased native external activation is denied before provider start while unmanaged native dispatch remains available', { timeout: 20000 }, async (t) => {
   const outcome = Promise.withResolvers();
-  const host = await fixture(t, { bridge: false, cleanup: () => { outcome.resolve({ output: [], stopReason: 'aborted' }); } });
+  const host = await fixture(t, { managed: false, cleanup: () => { outcome.resolve({ output: [], stopReason: 'aborted' }); } });
   const managedId = 'synthetic-external-managed-parent';
   await host.ctx.dshRoles.prepareLead(managedId);
   await host.ctx.sessionController.create({ sessionId: managedId, cwd: host.fixtureRoot });
@@ -422,7 +422,7 @@ test('aliased native external activation is denied before provider start while u
 });
 
 test('ordinary native Web Sessions and Teams retain native provisioning without a managed role binding', { timeout: 20000 }, async (t) => {
-  const host = await fixture(t, { bridge: false });
+  const host = await fixture(t, { managed: false });
   const created = await host.ctx.sessionController.create({ cwd: host.fixtureRoot });
   const lead = host.ctx.agents.get(created.sessionId);
   await host.ctx.sessionController.prompt({ sessionId: created.sessionId, requestId: 'native-web-input', mode: 'queue', content: content('Synthetic native Web control input.') }, new AbortController().signal);
@@ -434,8 +434,8 @@ test('ordinary native Web Sessions and Teams retain native provisioning without 
 });
 
 test('verified native host identity refuses replacement service facades', { timeout: 20000 }, async (t) => {
-  const host = await fixture(t, { bridge: false });
-  const { assertNativeHost } = await import('../../src/bridge/index.mjs');
+  const host = await fixture(t, { managed: false });
+  const { assertNativeHost } = await import('../../src/teams/index.mjs');
   const names = ['agents', 'sessions', 'sessionController', 'agentTeams', 'connection', 'typertGateway'];
   const actual = Object.fromEntries(names.map((name) => [name, host.ctx[name]]));
   await assertNativeHost(actual);
@@ -445,10 +445,10 @@ test('verified native host identity refuses replacement service facades', { time
 test('durable admission metadata reconciles native create and prompt reply-loss windows without duplicate input', { timeout: 20000 }, async (t) => {
   let store;
   let port;
-  const host = await fixture(t, { bridge: false, cleanup: async () => { await port?.close(); await store?.close(); } });
-  const [{ NativeSessionPort }, { SessionBridge }, { BridgeStore }] = await Promise.all([import('../../src/bridge/native-port.mjs'), import('../../src/bridge/service.mjs'), import('../../src/bridge/private-store.mjs')]);
+  const host = await fixture(t, { managed: false, cleanup: async () => { await port?.close(); await store?.close(); } });
+  const [{ NativeSessionPort }, { ManagedTeams }, { TeamStore }] = await Promise.all([import('../../src/teams/native-port.mjs'), import('../../src/teams/service.mjs'), import('../../src/teams/private-store.mjs')]);
   const statePath = join(host.root, 'admission-crash');
-  store = await new BridgeStore(statePath).open();
+  store = await new TeamStore(statePath).open();
   let createCalls = 0;
   class LostCreateReply extends NativeSessionPort {
     async create(request) {
@@ -459,7 +459,7 @@ test('durable admission metadata reconciles native create and prompt reply-loss 
     }
   }
   port = new LostCreateReply(host.ctx, host.ctx.dshRoles);
-  let bridge = new SessionBridge({ native: port, store, allowedRoots: [host.fixtureRoot] });
+  let bridge = new ManagedTeams({ native: port, store, allowedRoots: [host.fixtureRoot] });
   const first = { key: 'create-window', text: 'Synthetic create crash window.', cwd: host.fixtureRoot };
   await assert.rejects(bridge.create(first), /SYNTHETIC_LOST_CREATE_REPLY/u);
   const reserved = await store.get('key', first.key);
@@ -468,9 +468,9 @@ test('durable admission metadata reconciles native create and prompt reply-loss 
   assert.equal(host.requests.length, 0);
   await port.close();
   await store.close();
-  store = await new BridgeStore(statePath).open();
+  store = await new TeamStore(statePath).open();
   port = new NativeSessionPort(host.ctx, host.ctx.dshRoles);
-  bridge = new SessionBridge({ native: port, store, allowedRoots: [host.fixtureRoot] });
+  bridge = new ManagedTeams({ native: port, store, allowedRoots: [host.fixtureRoot] });
   const recovered = await bridge.create(first);
   assert.equal(recovered.teamId, reserved.sessionId);
   await until(() => host.requests.length === 1 && host.ctx.agents.get(recovered.teamId)?.status === 'idle');
@@ -484,16 +484,16 @@ test('durable admission metadata reconciles native create and prompt reply-loss 
     }
   }
   port = new LostPromptReply(host.ctx, host.ctx.dshRoles);
-  bridge = new SessionBridge({ native: port, store, allowedRoots: [host.fixtureRoot] });
+  bridge = new ManagedTeams({ native: port, store, allowedRoots: [host.fixtureRoot] });
   const followup = { teamId: recovered.teamId, inputId: 'prompt-window', text: 'Synthetic prompt crash window.' };
   await assert.rejects(bridge.send(followup), /SYNTHETIC_LOST_PROMPT_REPLY/u);
   assert.equal((await store.get('input', [recovered.teamId, followup.inputId])).accepted, false);
   await until(() => host.requests.length === 2 && host.ctx.agents.get(recovered.teamId)?.status === 'idle');
   await port.close();
   await store.close();
-  store = await new BridgeStore(statePath).open();
+  store = await new TeamStore(statePath).open();
   port = new NativeSessionPort(host.ctx, host.ctx.dshRoles);
-  bridge = new SessionBridge({ native: port, store, allowedRoots: [host.fixtureRoot] });
+  bridge = new ManagedTeams({ native: port, store, allowedRoots: [host.fixtureRoot] });
   assert.equal((await bridge.send(followup)).accepted, true);
   assert.equal(host.requests.length, 2);
   const logged = host.ctx.sessions.get(recovered.teamId).snapshotEvents().filter((event) => event.type === 'user/message' && event.data.source.rpcId === followup.inputId);
@@ -520,8 +520,8 @@ test('a flushed process crash recovers the same native member and immutable role
   assert.equal(readyLine.done, false, stderr);
   const ready = JSON.parse(readyLine.value);
   assert.equal(ready.ready, true);
-  const { BridgeClient } = await import('../fixtures/client.mjs');
-  const client = new BridgeClient({ socketPath: ready.socketPath });
+  const { NativeClient } = await import('../fixtures/client.mjs');
+  const client = new NativeClient({ url: ready.url });
   t.after(() => client.close());
   const originalInput = { key: 'hard-crash', text: 'Synthetic crash: start the left role.', cwd: ready.fixtureRoot };
   const created = await client.request('create', originalInput);
@@ -562,7 +562,7 @@ test('a native member model selection survives cold recovery independently of it
   const gate = Promise.withResolvers();
   let host;
   t.after(async () => { gate.resolve(); await host?.dispose(); await rm(root, { recursive: true, force: true }); });
-  host = await mountNativeHost({ root, bridge: false, respond: async (options) => { if (options.provider === 'fixture-left') await gate.promise; return textChunks('SYNTHETIC_SELECTION_COMPLETE'); } });
+  host = await mountNativeHost({ root, managed: false, respond: async (options) => { if (options.provider === 'fixture-left') await gate.promise; return textChunks('SYNTHETIC_SELECTION_COMPLETE'); } });
   const rootId = 'synthetic-native-selection';
   await host.ctx.dshRoles.prepareLead(rootId);
   await host.ctx.sessionController.create({ sessionId: rootId, cwd: host.fixtureRoot });
@@ -580,7 +580,7 @@ test('a native member model selection survives cold recovery independently of it
   await host.dispose();
   host = undefined;
   const changed = { ...fixtureRoles, left: { ...fixtureRoles.left, provider: 'fixture-right', instructions: 'LEFT_ROLE_V2: This changed role is only for new members.' } };
-  host = await mountNativeHost({ root, bridge: false, roles: changed });
+  host = await mountNativeHost({ root, managed: false, roles: changed });
   const resumed = await host.ctx.sessionController.resolveAgent(rootId);
   assert(resumed.agent);
   await host.ctx.agentTeams.sendMessage(resumed.agent, { target: 'selected-one', content: content('Synthetic selected-route recovery.'), signal: new AbortController().signal });

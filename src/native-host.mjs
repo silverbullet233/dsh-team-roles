@@ -1,6 +1,6 @@
-/** Compose role policy and IPC into an already running native Web profile. */
+/** Compose role policy and native Team operations into an already running native Web profile. */
 import Roles from './roles/index.mjs';
-import * as Bridge from './bridge/index.mjs';
+import * as Teams from './teams/index.mjs';
 import { Config } from './settings/schema.mjs';
 import { catalogValue, validateCatalog } from './settings/catalog.mjs';
 import { TeamRoleSettings } from './settings/index.mjs';
@@ -19,7 +19,7 @@ export async function apply(ctx, config) {
   await ctx.plugin(Roles, roles);
   await ctx.inject(['dshRoles'], child => { child.dshRoles.catalogSource = () => catalogValue(config.catalog.get(), { allowUnconfigured: true }); });
   await ctx.plugin(TeamRoleSettings, { hostContext: ctx, config });
-  await ctx.plugin(Bridge, { stateDirectory: config.stateDirectory, socketPath: config.socketPath, allowedRoots: config.allowedRoots });
+  await ctx.plugin(Teams, { stateDirectory: config.stateDirectory, allowedRoots: config.allowedRoots });
   if (config.validation !== undefined) {
     if (config.validation.mode !== 'live' || config.validation.allowOtherSessions !== true) throw new Error('Existing-host validation must be live, synthetic-only, and leave unrelated Sessions untouched.');
     const { default: AgentPreset } = await import('@deepseek-ai/dsh-agent-preset');

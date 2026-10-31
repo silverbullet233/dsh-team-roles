@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NativeSessionPort } from '../../src/bridge/native-port.mjs';
-import { initialBridgeState } from '../../src/bridge/projection.mjs';
+import { NativeSessionPort } from '../../src/teams/native-port.mjs';
+import { initialObservation } from '../../src/teams/projection.mjs';
 
 function fixture() {
   const calls = [];
   const roles = { async bindings() { return []; }, catalog() { return { roles: [] }; } };
-  const observation = initialBridgeState();
+  const observation = initialObservation();
   const agents = new Map();
   const children = new Map();
   const projection = { kind: 'sequenced', asOfSeq: 1, values: { dshBridge: observation, agentTeam: { members: [{ id: 'root', name: 'lead', role: 'lead' }, { id: 'child', name: 'worker', role: 'teammate' }], tasks: [] }, inbox: { 'next-turn': [], 'next-step': [] }, modelSelection: { lastUsed: { provider: 'observed', model: 'actual' } } } };
@@ -14,13 +14,14 @@ function fixture() {
     connection: { createPeer(options) { calls.push(['peer', options]); return { dispose: async () => calls.push(['peer-disposed']) }; } },
     typertGateway: { invoke(request) {
       calls.push([request.method, request.args.request]);
+      if (request.method === 'cancel') agents.get(request.args.request.sessionId).status = 'idle';
       return request.method === 'projections' ? structuredClone(request.args.request.sessionId === 'root' ? projection : children.get(request.args.request.sessionId) ?? null) : { accepted: true };
     } },
     sessionController: {}, sessions: { get() { return {}; }, async flush() { calls.push(['flush']); } },
     agents: { get(id) { return agents.get(id); } }, sessionProjections: {},
     agentTeams: {
       listMembers() { return projection.values.agentTeam.members.map(member => ({ ...member, status: member.phase === 'provisioning' ? 'provisioning' : agents.get(member.id)?.status === 'running' ? 'running' : 'inactive' })); },
-      interrupt(lead, name) { calls.push(['interrupt', lead.id, name]); },
+      interrupt(lead, name) { calls.push(['interrupt', lead.id, name]); agents.get('child').status = 'idle'; },
     },
   };
   return { port: new NativeSessionPort(ctx, roles), calls, agents, children, observation, projection };
@@ -82,6 +83,7 @@ test('stop interrupts native children through Team authority and cancels lead th
   agents.set('child', { id: 'child', status: 'running' });
   const result = await port.stop('root');
   assert.equal(result.accepted, true);
+  assert.equal(result.quiescent, true);
   assert.deepEqual(calls.filter(call => call[0] === 'cancel'), [['cancel', { sessionId: 'root' }]]);
   assert.deepEqual(calls.filter(call => call[0] === 'interrupt'), [['interrupt', 'root', 'worker']]);
   assert.equal(result.filesRolledBack, false);
@@ -94,7 +96,7 @@ test('native inactive unloaded children with durable completion and empty inbox 
   observation.lastEnd = { turn: 1, reason: 'completed' };
   agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } });
   children.set('child', { kind: 'sequenced', asOfSeq: 7, values: {
-    dshBridge: { ...initialBridgeState(), lastEnd: { turn: 1, reason: 'completed' } },
+    dshBridge: { ...initialObservation(), lastEnd: { turn: 1, reason: 'completed' } },
     inbox: { 'next-turn': [], 'next-step': [] },
   } });
   const status = await port.snapshot('root');
@@ -119,7 +121,7 @@ test('an inactive child open turn cannot reuse an earlier completed outcome as T
   observation.lastEnd = { turn: 1, reason: 'completed' };
   agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } });
   children.set('child', { kind: 'sequenced', asOfSeq: 9, values: {
-    dshBridge: { ...initialBridgeState(), turn: 2, open: true, lastEnd: { turn: 1, reason: 'completed' } },
+    dshBridge: { ...initialObservation(), turn: 2, open: true, lastEnd: { turn: 1, reason: 'completed' } },
     inbox: { 'next-turn': [], 'next-step': [] },
   } });
   const status = await port.snapshot('root');

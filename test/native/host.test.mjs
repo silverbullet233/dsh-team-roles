@@ -5,30 +5,29 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createVolatile, updateVolatile } from '@deepseek-ai/cosmokit';
 import { mountNativeHost, fixtureRoles, until } from '../fixtures/native-harness.mjs';
-import { BridgeClient } from '../fixtures/client.mjs';
+import { NativeClient } from '../fixtures/client.mjs';
 import { catalogFromLegacy } from '../../src/settings/catalog.mjs';
 import * as Host from '../../src/host.mjs';
 
 async function fixture(t, root, catalog) {
-  const base = await mountNativeHost({ root, bridge: false });
+  const base = await mountNativeHost({ root, managed: false });
   await base.roleFiber.dispose();
   // Actual Loader/Settings writes are tested separately; this test exercises
   // the complete native host composition and the volatile consumption seam.
   base.ctx.provide('settings', { configure: () => () => {} });
-  const socketPath = join(root, 'native.sock');
-  const fiber = base.ctx.plugin(Host, { stateDirectory: join(root, 'role-state'), socketPath, allowedRoots: [base.fixtureRoot], catalog });
+  const fiber = base.ctx.plugin(Host, { stateDirectory: join(root, 'role-state'), allowedRoots: [base.fixtureRoot], catalog });
   await fiber;
-  const client = new BridgeClient({ socketPath });
+  const client = new NativeClient({ ctx: base.ctx });
   t.after(async () => { client.close(); await base.dispose(); });
   return { ...base, client, fiber };
 }
 
-test('full native host composes roles, settings Remote and IPC; catalog changes affect new reservations only', { timeout: 20000 }, async t => {
+test('full native host composes roles, settings Remote and native Team Remote; catalog changes affect new reservations only', { timeout: 20000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'team-role-host-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const value = catalogFromLegacy({ leadRole: 'lead', roles: fixtureRoles });
   const host = await fixture(t, root, value);
-  assert.equal((await host.client.request('health')).protocol.version, 1);
+  assert.equal((await host.client.request('health')).api.version, 1);
   assert(host.ctx.typert.local.get('teamRoleSettings/save'));
   const first = await host.client.request('create', { key: 'before-settings', cwd: host.fixtureRoot, text: 'Synthetic catalog baseline.' });
   const lead = host.ctx.agents.get(first.teamId); await lead.whenIdle();

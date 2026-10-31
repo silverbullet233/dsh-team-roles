@@ -1,16 +1,16 @@
 /** Idempotent admission metadata over the native Session service. */
-import { PROTOCOL_NAME, PROTOCOL_VERSION, CAPABILITIES } from './protocol.mjs';
+import { API_NAME, API_VERSION, CAPABILITIES } from './capabilities.mjs';
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
-import { BridgeError, object, text } from './errors.mjs';
+import { TeamError, object, text } from './errors.mjs';
 import { digest } from './private-store.mjs';
 
 /** Serialization is admission-only. DSH remains the sole execution scheduler. */
-export class SessionBridge {
+export class ManagedTeams {
   constructor({ native, store, allowedRoots, sourceSha = null, runtimeEvidence = null }) {
     if (!Array.isArray(allowedRoots) || allowedRoots.length === 0 || allowedRoots.some(root => !isAbsolute(root))) {
-      throw new BridgeError('INVALID_CONFIG', 'allowedRoots must contain explicit absolute workspace roots.');
+      throw new TeamError('INVALID_CONFIG', 'allowedRoots must contain explicit absolute workspace roots.');
     }
     this.native = native;
     this.store = store;
@@ -18,6 +18,8 @@ export class SessionBridge {
     this.sourceSha = sourceSha;
     this.runtimeEvidence = runtimeEvidence;
     this.tails = new Map();
+    this.pending = new Set();
+    this.closing = false;
   }
 
   async serial(key, action) {
@@ -32,7 +34,7 @@ export class SessionBridge {
     const directory = await realpath(text(cwd, 'cwd', 4096));
     const allowed = await Promise.all(this.allowedRoots.map(root => realpath(root)));
     if (!allowed.some(root => { const suffix = relative(root, directory); return suffix === '' || (!suffix.startsWith(`..${sep}`) && suffix !== '..' && !isAbsolute(suffix)); })) {
-      throw new BridgeError('WORKSPACE_DENIED', 'Directory is outside the configured workspace roots.');
+      throw new TeamError('WORKSPACE_DENIED', 'Directory is outside the configured workspace roots.');
     }
     return directory;
   }
@@ -40,15 +42,27 @@ export class SessionBridge {
   async record(teamId) {
     text(teamId, 'teamId', 256);
     const record = await this.store.get('team', teamId);
-    if (record === undefined || record.sessionId !== teamId) throw new BridgeError('UNKNOWN_TEAM', 'This bridge did not create the requested Team.');
+    if (record === undefined || record.sessionId !== teamId) throw new TeamError('UNKNOWN_TEAM', 'The role service did not create the requested Team.');
     return record;
   }
 
   async dispatch(method, params = {}) {
+    if (this.closing) throw new TeamError('SERVICE_CLOSING', 'Managed-Team admission is closed.');
+    const operation = this.invoke(method, params);
+    this.pending.add(operation);
+    try { return await operation; } finally { this.pending.delete(operation); }
+  }
+
+  async close() {
+    this.closing = true;
+    await Promise.allSettled([...this.pending]);
+  }
+
+  async invoke(method, params) {
     switch (method) {
       case 'health':
         object(params, []);
-        return { ok: true, protocol: { name: PROTOCOL_NAME, version: PROTOCOL_VERSION, capabilities: CAPABILITIES }, sourceSha: this.sourceSha, runtime: this.runtimeEvidence, roles: await this.native.catalog?.() ?? null, transport: 'uid-restricted-unix-socket', service: 'native-session', modalities: ['text'], ownsExecution: false };
+        return { ok: true, api: { name: API_NAME, version: API_VERSION, capabilities: CAPABILITIES }, sourceSha: this.sourceSha, runtime: this.runtimeEvidence, roles: await this.native.catalog?.() ?? null, transport: 'native-typert-gateway', service: 'native-session', modalities: ['text'], ownsExecution: false, host: { pid: process.pid, instanceId: process.env.DSH_OWNED_INSTANCE_ID ?? null } };
       case 'create': return this.create(params);
       case 'send': return this.send(params);
       case 'status': return this.status(params);
@@ -56,9 +70,44 @@ export class SessionBridge {
       case 'stop':
         object(params, ['teamId']);
         await this.record(params.teamId);
-        return this.native.stop(params.teamId);
-      default: throw new BridgeError('METHOD_NOT_FOUND', 'Unknown bridge method.');
+        return this.serial(`team:${params.teamId}`, () => this.native.stop(params.teamId));
+      case 'prepareShutdown':
+        object(params, []);
+        this.quiescing = true;
+        try {
+          const activity = await this.activity();
+          if (activity.safeToStop) this.closing = true;
+          else this.quiescing = false;
+          return activity;
+        } catch (error) { this.quiescing = false; throw error; }
+      case 'activity':
+        object(params, []);
+        return this.activity();
+      default: throw new TeamError('METHOD_NOT_FOUND', 'Unknown managed-Team method.');
     }
+  }
+
+  async activity() {
+    const agents = this.native.ctx.agents.list();
+    const busy = agents.filter(agent => agent.status === 'running').map(agent => agent.id);
+    const records = await this.store.list('team');
+    const unsettled = [];
+    for (const record of records) {
+      try {
+        const state = await this.native.snapshot(record.sessionId);
+        const activity = state.teamActivity;
+        if (activity.members.some(member => member.openTurn || member.pendingInputs !== 0 || member.phase === 'provisioning')
+          || activity.pendingTasks > 0 || state.observation.open || ['running', 'provisioning', 'unknown'].includes(activity.state)) unsettled.push(record.sessionId);
+      } catch { unsettled.push(record.sessionId); }
+    }
+    // Inspect unmanaged Web Sessions too, including their native inboxes.
+    for (const agent of agents) {
+      const projections = await this.native.projections(agent.id);
+      const inbox = projections?.kind === 'sequenced' ? projections.values.inbox : null;
+      if (inbox === null || inbox === undefined || (inbox['next-turn']?.length ?? 0) + (inbox['next-step']?.length ?? 0) > 0) unsettled.push(agent.id);
+    }
+    return { safeToStop: this.pending.size <= 1 && (this.httpAdmissions ?? 0) <= 1 && busy.length === 0 && unsettled.length === 0,
+      running: busy, unsettled: [...new Set(unsettled)], admissions: Math.max(0, this.pending.size - 1) };
   }
 
   async create(params) {
@@ -70,12 +119,12 @@ export class SessionBridge {
     const agentPreset = params.agentPreset === undefined ? undefined : text(params.agentPreset, 'agentPreset', 256);
     const leadRole = params.leadRole === undefined ? undefined : text(params.leadRole, 'leadRole', 128);
     if (workspaceId !== undefined && await this.workspace(this.native.workspacePath(workspaceId)) !== cwd) {
-      throw new BridgeError('WORKSPACE_DENIED', 'The native workspace path differs from cwd.');
+      throw new TeamError('WORKSPACE_DENIED', 'The native workspace path differs from cwd.');
     }
     const hash = digest({ prompt, cwd, workspaceId, agentPreset, leadRole });
     return this.serial(`key:${key}`, async () => {
       let record = await this.store.get('key', key);
-      if (record !== undefined && record.digest !== hash) throw new BridgeError('CONTENT_CONFLICT', 'The create key is already bound to different content.');
+      if (record !== undefined && record.digest !== hash) throw new TeamError('CONTENT_CONFLICT', 'The create key is already bound to different content.');
       if (record === undefined) {
         record = { sessionId: randomUUID(), inputId: `create-${digest(key)}`, digest: hash, cwd, stage: 'reserved', createdAt: Date.now() };
         await this.store.set('key', key, record);
@@ -83,10 +132,10 @@ export class SessionBridge {
       await this.store.set('team', record.sessionId, record);
       const existing = await this.native.projections(record.sessionId);
       if (existing === null) {
-        if (record.stage !== 'reserved') throw new BridgeError('SESSION_MISSING', 'The reserved native Session disappeared; no replacement was created.');
+        if (record.stage !== 'reserved') throw new TeamError('SESSION_MISSING', 'The reserved native Session disappeared; no replacement was created.');
         await this.native.prepareLead(record.sessionId, leadRole);
         const created = await this.native.create({ sessionId: record.sessionId, ...(workspaceId === undefined ? { cwd } : { workspaceId }), ...(agentPreset === undefined ? {} : { agentPreset }) });
-        if (created.sessionId !== record.sessionId) throw new BridgeError('SESSION_CONFLICT', 'Native create returned another Session; admission stopped.');
+        if (created.sessionId !== record.sessionId) throw new TeamError('SESSION_CONFLICT', 'Native create returned another Session; admission stopped.');
         await this.native.flush(record.sessionId);
       }
       record = { ...record, stage: 'created' };
@@ -96,7 +145,7 @@ export class SessionBridge {
       try {
         acceptance = await this.send({ teamId: record.sessionId, inputId: record.inputId, text: prompt, mode: 'queue' });
       } catch (error) {
-        if (!(error instanceof BridgeError) || error.code !== 'CONTINUATION_REQUIRED') throw error;
+        if (!(error instanceof TeamError) || error.code !== 'CONTINUATION_REQUIRED') throw error;
         const receipt = await this.store.get('input', [record.sessionId, record.inputId]);
         acceptance = { accepted: receipt === undefined ? false : null, processed: null, requiresContinuation: true };
       }
@@ -111,17 +160,17 @@ export class SessionBridge {
     const inputId = text(params.inputId, 'inputId', 256);
     const prompt = text(params.text, 'text');
     const mode = params.mode ?? 'queue';
-    if (mode !== 'queue' && mode !== 'steer') throw new BridgeError('INVALID_REQUEST', 'mode must be queue or steer.');
-    if (params.continue !== undefined && typeof params.continue !== 'boolean') throw new BridgeError('INVALID_REQUEST', 'continue must be a boolean.');
+    if (mode !== 'queue' && mode !== 'steer') throw new TeamError('INVALID_REQUEST', 'mode must be queue or steer.');
+    if (params.continue !== undefined && typeof params.continue !== 'boolean') throw new TeamError('INVALID_REQUEST', 'continue must be a boolean.');
     return this.serial(`team:${params.teamId}`, async () => {
       const receiptKey = [params.teamId, inputId];
       const hash = digest({ prompt, mode });
       const receipt = await this.store.get('input', receiptKey);
-      if (receipt !== undefined && receipt.digest !== hash) throw new BridgeError('CONTENT_CONFLICT', 'The input ID is already bound to different content.');
+      if (receipt !== undefined && receipt.digest !== hash) throw new TeamError('CONTENT_CONFLICT', 'The input ID is already bound to different content.');
       if (receipt?.accepted === true) return { teamId: params.teamId, inputId, accepted: true, processed: null, duplicate: true };
       const snapshot = await this.native.snapshot(params.teamId);
       if (snapshot.needsContinuation && params.continue !== true) {
-        throw new BridgeError('CONTINUATION_REQUIRED', `Explicit continue=true is required for Team ${params.teamId}; retry send with the same inputId.`);
+        throw new TeamError('CONTINUATION_REQUIRED', `Explicit continue=true is required for Team ${params.teamId}; retry send with the same inputId.`);
       }
       await this.store.set('input', receiptKey, { teamId: params.teamId, inputId, digest: hash, accepted: false });
       await this.native.prompt({ requestId: inputId, sessionId: params.teamId, mode, content: [{ type: 'text', text: prompt }] });

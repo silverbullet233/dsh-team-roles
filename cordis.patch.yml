@@ -6,8 +6,6 @@
       config:
         stateDirectory: !!js >-
           (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).stateDirectory : dshHomePath('dsh-agent-team/state'); })()
-        socketPath: !!js >-
-          (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).socketPath : process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').tmpdir(), 'dsh-agent-team-' + process.getuid(), 'native.sock'); })()
         allowedRoots: !!js >-
           (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).allowedRoots : [ctx.get('profileContext').cwd]; })()
         catalog: !!js >-

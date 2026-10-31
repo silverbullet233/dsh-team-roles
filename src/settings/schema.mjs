@@ -4,7 +4,7 @@ const role = z.object({
   provider: z.string().required(), model: z.string().required(), reasoningEffort: z.string(),
 });
 export const Config = z.object({
-  stateDirectory: z.string().required(), socketPath: z.string().required(), allowedRoots: z.array(z.string()).required(),
+  stateDirectory: z.string().required(), allowedRoots: z.array(z.string()).required(),
   catalog: z.object({ leadRole: z.string().required(), roles: z.array(role).required() }).default({ leadRole: '', roles: [] }).volatile(),
   validation: z.any(),
 });

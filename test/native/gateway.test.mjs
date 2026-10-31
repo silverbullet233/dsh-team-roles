@@ -49,3 +49,37 @@ try {
 }
 
 });
+
+test('external roleTeams Remote shares native identities, survives disconnect, and guards whole-host shutdown', { timeout: 20000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-role-gateway-'));
+  let hang = true;
+  const host = await mountNativeHost({ root, respond: () => hang ? 'hang' : [{ type: 'block-start', index: 0, blockType: 'text' }, { type: 'text-delta', index: 0, text: 'DONE' }, { type: 'block-end', index: 0, block: { type: 'text', text: 'DONE' } }, { type: 'finish', reason: { kind: 'stop' } }] });
+  await host.ctx.plugin(web.default, { host: '127.0.0.1', port: 0 });
+  const { NativeClient } = await import('../fixtures/client.mjs');
+  const url = host.ctx.connection.authenticatedUrl(host.ctx.webServer.getOrigin());
+  const first = new NativeClient({ url });
+  const second = new NativeClient({ url });
+  t.after(async () => { await first.close(); await second.close(); await host.dispose(); await rm(root, { recursive: true, force: true }); });
+  assert.equal((await first.request('health')).transport, 'native-typert-gateway');
+  const input = { key: 'external-create', cwd: host.fixtureRoot, text: 'Synthetic bounded Gateway Team.' };
+  const created = await first.request('create', input);
+  await until(() => host.requests.length > 0);
+  assert.equal(created.accepted, true);
+  assert.equal((await first.request('create', input)).teamId, created.teamId);
+  assert.equal((await first.request('prepareShutdown')).safeToStop, false);
+  await first.close();
+  assert.equal(host.ctx.agents.get(created.teamId).status, 'running');
+  const status = await second.request('status', { teamId: created.teamId });
+  assert.equal(status.members[0].memberId, created.teamId);
+  assert.equal(status.rootTurnCompleted, false);
+  assert.equal((await second.request('result', { teamId: created.teamId })).completed, false);
+  await second.request('send', { teamId: created.teamId, inputId: 'external-steer', text: 'Synthetic steer.', mode: 'steer' });
+  assert.equal((await second.request('stop', { teamId: created.teamId })).quiescent, true);
+  hang = false;
+  await second.request('send', { teamId: created.teamId, inputId: 'external-followup', text: 'Synthetic finish.', continue: true });
+  await until(async () => (await second.request('result', { teamId: created.teamId })).completed === true);
+  const result = await second.request('result', { teamId: created.teamId });
+  assert.equal(result.output, 'DONE');
+  assert.equal(result.inputs.filter(item => item.id === 'external-followup').length, 1);
+  assert.equal((await second.request('prepareShutdown')).safeToStop, true);
+});

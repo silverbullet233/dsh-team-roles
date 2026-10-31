@@ -8,7 +8,7 @@ Role configuration for native DeepSeek Harness Teams. Edit role instructions and
 
 ## Requirements
 
-- Node.js **>=24.9.0** and UID-owned Unix sockets; macOS is validated.
+- Node.js **>=24.9.0**; macOS is validated.
 - Official npm runtime **`@deepseek-ai/dsh@0.2.2-alpha.2`**. This exact release is supported; other versions are not certified. Earlier `0.2.1-rc.3` and `rc.4` lack required model-selection APIs.
 - The native Web/base profile with **`@deepseek-ai/dsh-experimental-agent-team-profile`** enabled, and existing native provider registrations for any configured routes.
 
@@ -16,21 +16,22 @@ See [runtime requirements](docs/runtime.md) for the required services. Installin
 
 ## Installation
 
-Install/select the supported DSH release, then add the built plugin tarball:
+Version **0.5.0 is an unreleased candidate**. Published 0.3.0 uses an older runtime and private IPC; main 0.4.0 is also unpublished. Build this branch and install its actual local tarball with the exact supported DSH CLI:
 
 ```sh
-npm install --global @deepseek-ai/dsh@0.2.2-alpha.2
-dsh plugin --profile web add /path/to/dsh-team-roles-0.4.0.tgz --ignore-scripts
-dsh web
+npm ci --ignore-scripts --no-audit --no-fund
+npm run build
+npm pack --pack-destination /absolute/output/directory
+dsh plugin --profile web add /absolute/output/directory/dsh-team-roles-0.5.0.tgz --ignore-scripts
 ```
 
-Enable the official Agent Team profile first if it is not active: `dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-profile@0.2.2-alpha.2 --ignore-scripts`. Use built tarballs from [releases](https://github.com/silverbullet233/dsh-team-roles/releases) or a local build; source archives omit the Web asset. No source checkout, manual dependency links or runtime connector is required.
+Enable the official Agent Team profile if needed: `dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-profile@0.2.2-alpha.2 --ignore-scripts`. Source archives omit the built Web asset. Installation does not upgrade a global runtime. A Codex-owned profile uses the same ordinary Web/base and native Agent Team bundles, with its own Harness home and persistent data.
 
 ## Configuration
 
 Open **account menu → Settings → Team roles** in native Web. Add roles with a name, description, instructions, registered provider, model and optional reasoning effort, then select a default Lead role and save. Invalid routes and stale edits are rejected.
 
-Settings saves the role catalog. With roles configured, [create a role-managed Team through the plugin IPC API](docs/protocol.md#create-a-role-managed-team) to apply its Lead route and `spawn_role_teammate` tool. Ordinary Sessions/Teams created directly in Web retain native behavior; IPC-created Teams are also visible in Web.
+Create a managed Team from **Settings → Team roles → Create a role-managed Team** using the saved Lead role. **Open Team** opens its native Session. External integrations call the same [native Typert Remote API](docs/protocol.md). Ordinary New Session/Team creation keeps native behavior. No global daemon or custom Unix socket is required.
 
 An empty catalog allows new Teams to use native model inheritance. Existing managed members keep their saved bindings when roles change or are removed; existing unmanaged Teams stay unmanaged when roles are added. Role selection is model-driven.
 
@@ -46,4 +47,4 @@ npm run build
 npm test
 ```
 
-Dependencies and tests use the released npm packages, with no running user DSH or provider credentials required. See [CONTRIBUTING.md](CONTRIBUTING.md) for native tests and release maintenance. Local integrations can use the [private IPC API](docs/protocol.md).
+Dependencies and tests use the released npm packages, with no running user DSH or provider credentials required. See [CONTRIBUTING.md](CONTRIBUTING.md) for native tests and release maintenance. Local integrations can use the [native Gateway API](docs/protocol.md).

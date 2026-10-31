@@ -4,7 +4,6 @@ import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
-import { createConnection } from 'node:net';
 
 const [runtimeArgument, home, profileName, mode = 'positive'] = process.argv.slice(2);
 const runtime = await realpath(runtimeArgument);
@@ -30,22 +29,15 @@ const ctx = await app.boot('portability', join(profileDir, 'cordis.yml'), patche
   await ctx.plugin(ConfigEditor); await ctx.plugin(Settings);
   if (mode === 'missing-api') { const { AgentModel } = await import('@deepseek-ai/dsh-agent'); AgentModel.prototype.select = undefined; }
 });
-const socketPath = join(home, 'tmp', `dsh-agent-team-${process.getuid()}`, 'native.sock');
-let nextId = 0;
-const call = (method, params = {}) => new Promise((resolve, reject) => {
-  const id = ++nextId, socket = createConnection(socketPath); let body = '';
-  socket.on('error', reject);
-  socket.once('connect', () => socket.write(JSON.stringify({ protocol: 1, id, method, params }) + '\n'));
-  socket.on('data', chunk => { body += chunk; });
-  socket.once('end', () => { const result = JSON.parse(body); if (result.error) reject(Object.assign(new Error(result.error.message), result.error)); else resolve(result.result); });
-});
+const peer = ctx.connection.createPeer({ principal: { kind: 'owner' }, interactions: 'none' });
+const call = (method, request = {}) => ctx.typertGateway.invoke({ namespace: 'roleTeams', method, args: { request }, peer });
 try {
   if (mode === 'missing-api') {
     const entry = [...ctx.loader.entries()].find(entry => entry.options.id === 'dsh-agent-team');
     await assert.rejects(async () => { await entry.fiber.await(); }, error => error.code === 'DSH_RUNTIME_INCOMPATIBLE' && /agent.model.select/.test(error.message));
     assert.equal(ctx.get('teamRoleSettings'), undefined);
-    await assert.rejects(lstat(socketPath), error => error.code === 'ENOENT');
-    console.log(JSON.stringify({ missingApiRejected: true, code: 'DSH_RUNTIME_INCOMPATIBLE', socketOpened: false, nativeRequests: fixture.requests.length }));
+    assert.equal(ctx.get('roleTeams'), undefined);
+    console.log(JSON.stringify({ missingApiRejected: true, code: 'DSH_RUNTIME_INCOMPATIBLE', remoteRegistered: false, nativeRequests: fixture.requests.length }));
   } else {
   assert(ctx.get('teamRoleSettings'), 'Packed native settings service must activate');
   const health = await call('health');
