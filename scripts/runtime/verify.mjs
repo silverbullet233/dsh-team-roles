@@ -53,7 +53,7 @@ export async function verifyRuntime({ context } = {}) {
       requireSupportedVersion(anchor.version, anchor.name);
       if (!resolver?.packageOf) throw new Error('The native profile package resolver is unavailable');
       for (const [name, directory] of Object.entries(directories)) {
-        const serving = resolver.packageOf(name, pathToFileURL(profile.installAnchor).href);
+        const serving = resolver.packageOf(name, import.meta.url);
         if (!serving || realpathSync(serving.dir) !== directory) throw new Error(`Native package ${name} differs from the serving installation`);
       }
     }

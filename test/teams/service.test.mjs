@@ -3,22 +3,20 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, chmod, readFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SessionBridge } from '../../src/bridge/service.mjs';
-import { BridgeStore } from '../../src/bridge/private-store.mjs';
-import { serveBridge } from '../../src/bridge/ipc.mjs';
-import { BridgeClient } from '../fixtures/client.mjs';
-import { foldBridgeEvent, initialBridgeState } from '../../src/bridge/projection.mjs';
+import { ManagedTeams } from '../../src/teams/service.mjs';
+import { TeamStore } from '../../src/teams/private-store.mjs';
+import { foldObservation, initialObservation } from '../../src/teams/projection.mjs';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-bridge-'));
-  const store = await new BridgeStore(join(directory, 'metadata')).open();
+  const store = await new TeamStore(join(directory, 'metadata')).open();
   const native = {
     sessions: new Map(), calls: [], accepted: new Set(), failFlush: false,
     async projections(id) { return this.sessions.has(id) ? { kind: 'sequenced' } : null; },
     async prepareLead(id, role) { this.calls.push(['role', id, role]); },
     async create(request) {
       this.calls.push(['create', request]);
-      this.sessions.set(request.sessionId, { runtimeState: 'idle', needsContinuation: false, taskState: 'idle', observation: initialBridgeState() });
+      this.sessions.set(request.sessionId, { runtimeState: 'idle', needsContinuation: false, taskState: 'idle', observation: initialObservation() });
       return { sessionId: request.sessionId };
     },
     async flush(id) { this.calls.push(['flush', id]); if (this.failFlush) throw new Error('synthetic flush failure'); },
@@ -26,7 +24,7 @@ async function fixture(t) {
     async prompt(request) { this.calls.push(['prompt', request]); this.accepted.add(request.requestId); },
     async stop(id) { return { teamId: id, accepted: true, filesRolledBack: false }; },
   };
-  const bridge = new SessionBridge({ native, store, allowedRoots: [directory] });
+  const bridge = new ManagedTeams({ native, store, allowedRoots: [directory] });
   t.after(async () => { await store.close(); await rm(directory, { recursive: true, force: true }); });
   return { directory, store, bridge, native };
 }
@@ -154,7 +152,7 @@ test('workspace escape, unknown fields, non-text and arbitrary workspace id fail
 test('private store excludes second writer and reloads durable receipts after close', async t => {
   const { store } = await fixture(t);
   await store.set('test', 'receipt', { accepted: true });
-  const other = new BridgeStore(store.directory);
+  const other = new TeamStore(store.directory);
   await assert.rejects(other.open(), { code: 'WRITER_HELD' });
   await store.close();
   await other.open();
@@ -168,22 +166,23 @@ test('private store refuses symlinked metadata and permissive directories', asyn
   await symlink(store.path('test', 'actual'), store.path('test', 'link'));
   await assert.rejects(store.get('test', 'link'), { code: 'ELOOP' });
   await chmod(directory, 0o755);
-  await assert.rejects(new BridgeStore(directory).open(), { code: 'UNSAFE_DIRECTORY' });
+  await assert.rejects(new TeamStore(directory).open(), { code: 'UNSAFE_DIRECTORY' });
 });
 
-test('IPC exposes only six methods and client close leaves host available', async t => {
-  const { directory, bridge } = await fixture(t);
-  const socketPath = join(directory, 'ipc.sock');
-  const server = await serveBridge({ socketPath, bridge });
-  t.after(() => server.close());
-  const client = new BridgeClient({ socketPath });
-  const health = await client.request('health');
-  assert.equal(health.service, 'native-session');
-  await assert.rejects(client.request('eval', {}), { code: 'METHOD_NOT_FOUND' });
-  client.close();
-  const second = new BridgeClient({ socketPath });
-  assert.equal((await second.request('health')).ok, true);
-  second.close();
+test('admission closes and drains before metadata resources are released', async t => {
+  const { directory, bridge, native } = await fixture(t);
+  let finish;
+  const gate = new Promise(resolve => { finish = resolve; });
+  native.prompt = async () => gate;
+  const admitted = bridge.dispatch('create', { key: 'drain', cwd: directory, text: 'Synthetic draining work.' });
+  while (!bridge.pending.size) await new Promise(resolve => setImmediate(resolve));
+  let closed = false;
+  const closing = bridge.close().then(() => { closed = true; });
+  await assert.rejects(bridge.dispatch('health'), { code: 'SERVICE_CLOSING' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(closed, false);
+  finish(); await admitted; await closing;
+  assert.equal(closed, true);
 });
 
 test('projection distinguishes admission, entered processing, terminal outcome and output', () => {
@@ -193,9 +192,9 @@ test('projection distinguishes admission, entered processing, terminal outcome a
     { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '43' }, { type: 'reasoning', text: 'hidden' }] } } },
     { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
   ];
-  let state = initialBridgeState();
+  let state = initialObservation();
   for (const [seq, event] of events.entries()) {
-    state = foldBridgeEvent(state, { ...event, seq, time: seq });
+    state = foldObservation(state, { ...event, seq, time: seq });
     if (seq === 1) assert.equal(state.inputs[0].processed, false);
   }
   assert.equal(state.inputs[0].processed, true);

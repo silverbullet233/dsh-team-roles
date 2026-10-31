@@ -1,13 +1,13 @@
-/** Native Session projection for bridge observations; no execution state is scheduled here. */
+/** Native Session projection for managed-Team observations; no execution state is scheduled here. */
 const INPUT_LIMIT = 4096;
 const TEXT_LIMIT = 8192;
 
-export function initialBridgeState() {
+export function initialObservation() {
   return { turn: 0, open: false, lastEnd: null, inputs: [], output: '', recent: [], errors: [] };
 }
 
 /** Inputs become processed only after their native turn ends. */
-export function foldBridgeEvent(state, event) {
+export function foldObservation(state, event) {
   const recent = [...state.recent, { seq: event.seq, type: event.type, time: event.time }].slice(-12);
   if (event.type === 'turn/start') {
     return { ...state, turn: event.data.turn, open: true, recent };
@@ -38,7 +38,7 @@ export function foldBridgeEvent(state, event) {
 }
 
 /** Register using the runtime's public zod dependency. */
-export function bridgeProjectionDefinition(z) {
+export function teamObservationProjection(z) {
   const schema = z.object({
     turn: z.number().int().nonnegative(),
     open: z.boolean(),
@@ -55,8 +55,8 @@ export function bridgeProjectionDefinition(z) {
     key: 'dshBridge',
     stateVersion: 1,
     stateSchema: schema,
-    init: initialBridgeState,
-    apply: foldBridgeEvent,
+    init: initialObservation,
+    apply: foldObservation,
     wire: { viewSchema: schema, view: state => state },
   };
 }

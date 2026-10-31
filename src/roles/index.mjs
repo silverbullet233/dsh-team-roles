@@ -59,6 +59,7 @@ export class DshRoles extends Service {
     this.config = resolveConfig(config);
     this.leads = new LeadStore(this.config.stateDirectory);
     this.tails = new Map();
+    this.stopping = new Set();
     this.installed = new Map();
     this.installing = new Map();
     this.uninstalling = new Map();
@@ -90,7 +91,7 @@ export class DshRoles extends Service {
   /** Admission watchers use the current service instance across native HMR replacements. */
   isReady() { return this.ready && !this.lifecycle.signal.aborted; }
 
-  /** Store the Lead profile before the bridge calls native session.create. */
+  /** Store the Lead profile before the application service calls native session.create. */
   async prepareLead(sessionId, roleName) {
     const old = await this.leads.read(sessionId);
     if (old !== null) {
@@ -241,6 +242,7 @@ export class DshRoles extends Service {
     memberName(request.name);
     text(request.prompt, 'prompt');
     request.signal.throwIfAborted();
+    if (this.stopping.has(caller.id)) throw new Error('Team stopping is in progress; retry explicitly afterwards');
     const membership = this.ctx.agentTeams.membership(caller);
     if (membership.role !== 'lead') throw new Error('only the native Team Lead can spawn a role');
     const leadBinding = this.projection.stateOf(caller.session).bound;
@@ -248,6 +250,7 @@ export class DshRoles extends Service {
     const prior = this.tails.get(caller.id) ?? Promise.resolve();
     const run = prior.then(async () => {
       request.signal.throwIfAborted();
+      if (this.stopping.has(caller.id)) throw new Error('Team stopping is in progress');
       const digest = inputDigest({ name: request.name, role: request.role, prompt: request.prompt });
       let binding = this.projection.stateOf(caller.session).reservations.find(item => item.name === request.name);
       if (binding !== undefined) {
@@ -288,9 +291,9 @@ export class DshRoles extends Service {
 
   /** Current selection is unknown for unloaded members; lastRequest remains durable evidence. */
   async status(memberId, binding) {
-    const live = this.ctx.agents.get(memberId);
     const session = this.ctx.sessions.get(memberId);
     const state = session === undefined ? await this.coldState(memberId) : this.projection.stateOf(session);
+    const live = this.ctx.agents.get(memberId);
     const actualBinding = state.bound ?? binding;
     if (actualBinding === undefined || actualBinding === null) throw new Error('member has no role binding');
     return {

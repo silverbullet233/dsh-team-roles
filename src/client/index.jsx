@@ -1,14 +1,48 @@
 /** A page inside the native Settings shell; native Remote authentication is retained. */
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { remote } from '../settings/remote.mjs';
+import { remote as teamsRemote } from '../teams/remote.mjs';
+import { loadCreationDraft, saveCreationDraft, clearCreationDraft } from './creation-draft.mjs';
 
-export const inject = ['remote', 'remote.session', 'slots', 'configForms'];
+export const inject = ['remote', 'remote.session', 'slots', 'configForms', 'uiWorkspace'];
 const clone = value => structuredClone(value);
 const box = { padding: 12, border: '1px solid var(--border-color, #8884)', borderRadius: 8, marginBlock: 12 };
 const field = { display: 'grid', gap: 5, marginBlock: 10 };
-const control = { width: '100%', padding: 8, border: '1px solid #8886', borderRadius: 5, background: 'transparent', color: 'inherit', font: 'inherit' };
+const control = { boxSizing: 'border-box', width: '100%', padding: 8, border: '1px solid #8886', borderRadius: 5, background: 'transparent', color: 'inherit', font: 'inherit' };
 
-function TeamRoles({ form, save, models }) {
+function CreateTeam({ create, open }) {
+  const [saved] = useState(() => loadCreationDraft());
+  const [cwd, setCwd] = useState(saved?.request.cwd ?? ''), [task, setTask] = useState(saved?.request.text ?? '');
+  const [request, setRequest] = useState(saved?.request ?? null), [busy, setBusy] = useState(false);
+  const [receipt, setReceipt] = useState(saved?.receipt ?? null), [error, setError] = useState('');
+  const submit = async event => {
+    event.preventDefault();
+    const input = request ?? { key: crypto.randomUUID(), cwd, text: task };
+    setRequest(input); setBusy(true); setError('');
+    try {
+      saveCreationDraft(input);
+      const result = await create(input);
+      saveCreationDraft(input, result);
+      setReceipt(result);
+    }
+    catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  };
+  return <div style={box}>
+    <h3>Create a role-managed Team</h3>
+    <p>Use the saved Lead role and native Team tools. The workspace must be allowed by this host. Tasks and approvals appear in the native Session view.</p>
+    <form onSubmit={submit}>
+      <label style={field}>Workspace directory<input aria-label="Team workspace directory" required style={control} value={cwd} disabled={request !== null} onChange={event => setCwd(event.target.value)} /></label>
+      <label style={field}>Task<textarea aria-label="Team task" required rows={3} style={control} value={task} disabled={request !== null} onChange={event => setTask(event.target.value)} /></label>
+      <button type="submit" disabled={busy || receipt !== null}>{busy ? 'Creating…' : receipt ? 'Team created' : request ? 'Retry the same request' : 'Create Team'}</button>
+      {error && <p role="alert">{error} Retrying preserves this request and its Team identity.</p>}
+    </form>
+    {receipt && <p role="status">Team {receipt.teamId}. {receipt.accepted === true ? 'Input accepted; processing and completion are shown in the Session.' : 'Inspect the Session before explicitly continuing.'} <button onClick={() => open(receipt.sessionId)}>Open Team</button></p>}
+    {(receipt || error) && <button type="button" disabled={busy} onClick={() => { clearCreationDraft(); setRequest(null); setReceipt(null); setError(''); setTask(''); }}>Start a separate request</button>}
+  </div>;
+}
+
+function TeamRoles({ form, save, models, create, open, close }) {
   const snapshot = useSyncExternalStore(listener => form.subscribe(listener), () => form.getSnapshot());
   const [draft, setDraft] = useState(null), [revision, setRevision] = useState(null);
   const [dirty, setDirty] = useState(false), [saving, setSaving] = useState(false), [message, setMessage] = useState('');
@@ -37,6 +71,7 @@ function TeamRoles({ form, save, models }) {
   const stale = dirty && snapshot.revision > revision;
   return <section style={{ padding: 20, maxWidth: 900 }}>
     <h2>Team roles</h2>
+    <CreateTeam create={create} open={id => { open(id); close(); }} />
     <p>Configure role instructions and exact native provider routes. Changes apply immediately to new Leads and new members. Existing members, follow-ups and recovered members keep their original snapshots.</p>
     <p>With no roles configured, new Teams use native main Agent model selection and teammate inheritance. Removing a role prevents new members using it; bound members remain available. Saves use the native Web profile. Reload saved roles to discard a draft.</p>
     {stale && <p role="alert">Roles changed in another editor. Reload saved roles before saving.</p>}
@@ -84,11 +119,14 @@ function TeamRoles({ form, save, models }) {
 
 export async function apply(ctx) {
   await ctx.remote.$mount(remote);
-  await ctx.inject(['remote.teamRoleSettings'], child => {
+  await ctx.remote.$mount(teamsRemote);
+  await ctx.inject(['remote.teamRoleSettings', 'remote.roleTeams'], child => {
   const form = child.configForms.get('dsh-agent-team');
   child.slots.inject('settings.section', () => child.slots.register({
     name: 'settings.section', id: 'team-roles', label: 'Team roles', order: 45,
     inject: () => ({ form,
+      create: async request => { const result = await child.remote.roleTeams.create(request); if (!result.ok) throw new Error(result.error.message); return result.value; },
+      open: id => child.uiWorkspace.openSession(id),
       save: async (catalog, revision) => { const result = await child.remote.teamRoleSettings.save(catalog, revision); if (!result.ok) throw new Error(result.error.message); return result.value; },
       models: async () => { const result = await child.remote.session.modelCatalog(); if (!result.ok) throw new Error(result.error.message); return result.value; },
     }),

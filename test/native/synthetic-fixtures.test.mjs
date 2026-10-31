@@ -1,10 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { link, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { link, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syntheticFiles } from '../fixtures/synthetic-files.mjs';
 import { createSyntheticAuditor } from '../fixtures/audit.mjs';
+import { webWorkspace } from '../fixtures/web-workspace.mjs';
+
+test('Web acceptance creates a missing workspace before canonicalizing it', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'dsh-web-workspace-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const directory = await webWorkspace(home);
+  assert.equal(directory, await realpath(join(home, 'fixture')));
+  assert.equal(await webWorkspace(home), directory);
+});
 
 test('synthetic tools reject traversal, symlinks, outside files and oversized content', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-synthetic-'));

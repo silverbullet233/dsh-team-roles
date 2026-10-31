@@ -1,8 +1,8 @@
-/** Stable errors crossing the local bridge transport. */
-export class BridgeError extends Error {
+/** Stable errors for managed-Team application operations. */
+export class TeamError extends Error {
   constructor(code, message) {
     super(message);
-    this.name = 'BridgeError';
+    this.name = 'TeamError';
     this.code = code;
   }
 }
@@ -10,10 +10,10 @@ export class BridgeError extends Error {
 /** Validate a JSON request without accepting prototype-bearing objects. */
 export function object(value, fields) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new BridgeError('INVALID_REQUEST', 'Expected a request object.');
+    throw new TeamError('INVALID_REQUEST', 'Expected a request object.');
   }
   for (const key of Object.keys(value)) {
-    if (!fields.includes(key)) throw new BridgeError('INVALID_REQUEST', `Unexpected field: ${key}`);
+    if (!fields.includes(key)) throw new TeamError('INVALID_REQUEST', `Unexpected field: ${key}`);
   }
   return value;
 }
@@ -21,7 +21,7 @@ export function object(value, fields) {
 /** Validate bounded text at the process boundary. */
 export function text(value, name, limit = 65536) {
   if (typeof value !== 'string' || !value.trim() || Buffer.byteLength(value) > limit) {
-    throw new BridgeError('INVALID_REQUEST', `${name} must be non-empty text within ${limit} bytes.`);
+    throw new TeamError('INVALID_REQUEST', `${name} must be non-empty text within ${limit} bytes.`);
   }
   return value;
 }

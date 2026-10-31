@@ -27,7 +27,7 @@ export async function settingsFixture(t, { hmr = false } = {}) {
   await writeFile(join(bundle, 'cordis.patch.yml'), JSON.stringify([{ insert: [
     { id: 'config-editor', name: 'cordis:editor' }, { id: 'settings', name: 'cordis:settings' }, { id: 'typert', name: 'cordis:typert' },
     { id: 'llm', name: 'cordis:llm' }, { id: 'fixture-adapter', name: 'cordis:adapter' },
-    { id: 'dsh-agent-team', name: 'cordis:roles', config: { stateDirectory: join(home, 'state'), socketPath: join(home, 'ipc.sock'), allowedRoots: [home], catalog: { __jsExpr: `JSON.parse(process.getBuiltinModule('node:fs').readFileSync(${JSON.stringify(join(home, 'legacy.json'))}, 'utf8'))` } } },
+    { id: 'dsh-agent-team', name: 'cordis:roles', config: { stateDirectory: join(home, 'state'), allowedRoots: [home], catalog: { __jsExpr: `JSON.parse(process.getBuiltinModule('node:fs').readFileSync(${JSON.stringify(join(home, 'legacy.json'))}, 'utf8'))` } } },
   ] }]));
   await writeFile(join(dir, 'cordis.yml'), '[]\n');
   const profile = { name: 'test', startedBundles: ['test-bundle'], dir, patchPath: join(dir, 'cordis.patch.yml'), installAnchor: join(home, 'package.json'), cwd: home, home, overlays: [] };

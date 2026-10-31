@@ -1,9 +1,9 @@
 /** Private metadata storage. It retains correlations, never execution queues. */
 import { constants } from 'node:fs';
-import { mkdir, lstat, open, readFile, rename, unlink } from 'node:fs/promises';
+import { mkdir, lstat, open, readFile, readdir, rename, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { BridgeError } from './errors.mjs';
+import { TeamError } from './errors.mjs';
 
 export function digest(value) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -16,7 +16,7 @@ export async function privateDirectory(directory) {
   const info = await lstat(path);
   if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.()
     || (info.mode & 0o077) !== 0) {
-    throw new BridgeError('UNSAFE_DIRECTORY', 'Bridge directory must be a non-symlink directory owned by this UID with mode 0700.');
+    throw new TeamError('UNSAFE_DIRECTORY', 'Managed-Team directory must be a non-symlink directory owned by this UID with mode 0700.');
   }
   return path;
 }
@@ -37,7 +37,7 @@ export async function durableWrite(path, value) {
 }
 
 /** One native host owns this metadata writer. A dead PID may be reclaimed. */
-export class BridgeStore {
+export class TeamStore {
   constructor(directory) { this.directory = directory; this.lock = undefined; }
 
   async open() {
@@ -55,22 +55,22 @@ export class BridgeStore {
         const recoveryPath = join(this.directory, 'recovery.lock');
         let recovery;
         try { recovery = await open(recoveryPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); }
-        catch (claim) { if (claim.code === 'EEXIST') throw new BridgeError('WRITER_HELD', 'Another process is inspecting the metadata writer; retry after it finishes.'); throw claim; }
+        catch (claim) { if (claim.code === 'EEXIST') throw new TeamError('WRITER_HELD', 'Another process is inspecting the metadata writer; retry after it finishes.'); throw claim; }
         try {
           const prior = JSON.parse(await readFile(path, 'utf8'));
-          if (!Number.isSafeInteger(prior.pid) || prior.pid < 1) throw new BridgeError('WRITER_HELD', 'Metadata writer lock is invalid; inspect it manually.');
+          if (!Number.isSafeInteger(prior.pid) || prior.pid < 1) throw new TeamError('WRITER_HELD', 'Metadata writer lock is invalid; inspect it manually.');
           let stopped = false;
           try { process.kill(prior.pid, 0); }
           catch (probe) {
             if (probe.code === 'ESRCH') stopped = true;
-            else throw new BridgeError('WRITER_HELD', 'Cannot establish that the existing metadata writer has stopped.');
+            else throw new TeamError('WRITER_HELD', 'Cannot establish that the existing metadata writer has stopped.');
           }
           if (stopped && attempt === 0) { await unlink(path); continue; }
-          throw new BridgeError('WRITER_HELD', 'A live process already owns this bridge metadata directory.');
+          throw new TeamError('WRITER_HELD', 'A live process already owns this managed-Team metadata directory.');
         } finally { await recovery.close(); await unlink(recoveryPath); }
       }
     }
-    throw new BridgeError('WRITER_HELD', 'Could not acquire the metadata writer lock.');
+    throw new TeamError('WRITER_HELD', 'Could not acquire the metadata writer lock.');
   }
 
   path(kind, key) { return join(this.directory, `${kind}-${digest(key)}.json`); }
@@ -82,16 +82,30 @@ export class BridgeStore {
       try {
         const info = await handle.stat();
         if (!info.isFile() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) {
-          throw new BridgeError('UNSAFE_METADATA', 'Metadata file owner or permissions are invalid.');
+          throw new TeamError('UNSAFE_METADATA', 'Metadata file owner or permissions are invalid.');
         }
         const value = JSON.parse(await handle.readFile('utf8'));
-        if (value?.version !== 1) throw new BridgeError('INVALID_METADATA', 'Unsupported metadata version.');
+        if (value?.version !== 1) throw new TeamError('INVALID_METADATA', 'Unsupported metadata version.');
         return value;
       } finally { await handle.close(); }
     } catch (error) {
       if (error.code === 'ENOENT') return undefined;
       throw error;
     }
+  }
+
+  async list(kind) {
+    const names = (await readdir(this.directory)).filter(name => name.startsWith(`${kind}-`) && name.endsWith('.json'));
+    return Promise.all(names.map(async name => {
+      const file = await open(join(this.directory, name), constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        const info = await file.stat();
+        if (!info.isFile() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) throw new TeamError('UNSAFE_METADATA', 'Metadata permissions are invalid.');
+        const value = JSON.parse(await file.readFile('utf8'));
+        if (value.version !== 1) throw new TeamError('INVALID_METADATA', 'Unsupported metadata version.');
+        return value;
+      } finally { await file.close(); }
+    }));
   }
 
   set(kind, key, value) { return durableWrite(this.path(kind, key), { ...value, version: 1 }); }

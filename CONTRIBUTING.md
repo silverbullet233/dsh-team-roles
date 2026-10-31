@@ -16,7 +16,7 @@ All native dependencies come from the exact supported npm release, `0.2.2-alpha.
 mkdir -p dist/release
 npm pack --dry-run
 npm pack --pack-destination dist/release
-node scripts/release/check-tarball.mjs dist/release/dsh-team-roles-0.4.0.tgz
+node scripts/release/check-tarball.mjs dist/release/dsh-team-roles-0.5.0.tgz
 ```
 
 The check validates package contents and writes `SHA256SUMS`. For native install/load acceptance, run `node scripts/test-portable-package.mjs ./node_modules/@deepseek-ai/dsh <built-tarball>`; it creates a temporary profile and performs no paid inference.
@@ -30,3 +30,7 @@ The check validates package contents and writes `SHA256SUMS`. For native install
 The workflow requires the tag/version to match and the commit to belong to the default branch. PR jobs are read-only; only tag pushes can create drafts. Re-running a failed tag job resumes identical partial draft assets. Published versions or differing assets are refused without replacement. Changed release bytes require a new version. npm publication is separate.
 
 CI runs the synthetic native integration tests against the supported npm release. It does not certify provider inference, browser rendering or another DSH version. Keep action pins and runtime compatibility checks intact.
+
+## Web acceptance fixture
+
+`test/fixtures/web-profile.mjs <test-home> [port]` boots the ordinary official Web profile installed under `profiles/owned-web-test`. It uses a read-only in-memory credential record, a bounded synthetic adapter and its own workspace. It does not read personal credentials or invoke a model provider. Supply an isolated environment and a locally packed plugin. In the test profile, disable the original `credentials` row and insert a distinct `cordis:fixtureCredentials` row; `name` in an id patch is a matching guard, not a replacement. The runner refuses to start unless this composition is verified. The temporary `web-entry.json` is an ephemeral launch capability; never copy it into logs or source. Delete it when the test process ends. Browser creation and native Session rendering require actual visual inspection, separate from automated Gateway tests.

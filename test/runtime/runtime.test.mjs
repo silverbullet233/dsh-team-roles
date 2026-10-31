@@ -32,3 +32,16 @@ test('a profile cannot use a different CLI version or bypass installation module
   await assert.rejects(verifyRuntime({context:{get:name=>name==='profileContext'?{installAnchor:anchor}:{packageOf:()=>({dir:root})}}}),/differs from the serving installation/);
  } finally {await rm(root,{recursive:true,force:true});}
 });
+
+test('profile dependency identity is checked from the actual plugin importer, with serving instances checked separately', async () => {
+ const { dirname } = await import('node:path'); const { fileURLToPath } = await import('node:url');
+ const anchor = fileURLToPath(import.meta.resolve('@deepseek-ai/dsh/package.json'));
+ const callers = [];
+ const result = await verifyRuntime({ context: { get: name => name === 'profileContext' ? { installAnchor: anchor } : { packageOf: (pkg, caller) => {
+  callers.push(caller);
+  return { dir: dirname(fileURLToPath(import.meta.resolve(`${pkg}/package.json`))) };
+ } } } });
+ assert.equal(result.packageVersion, '0.2.2-alpha.2');
+ assert(callers.length > 5);
+ assert(callers.every(caller => caller.endsWith('/scripts/runtime/verify.mjs')));
+});
