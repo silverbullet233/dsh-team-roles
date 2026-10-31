@@ -16,6 +16,8 @@ Call `ctx.remote.roleTeams.create(request)` and inspect its native `{ ok, value 
 
 ## Creation and continuation
 
+The page retains its pending request and receipt in per-tab session storage across Settings navigation and reloads. Starting a separate request explicitly clears that identity.
+
 In **Settings → Team roles → Create a role-managed Team**, enter an allowed workspace and text task. The page reserves the saved Lead role before native Session creation. **Open Team** opens the same Session in the ordinary Web workspace. Native New Session and independent forks retain native behavior. An empty catalog preserves native model inheritance.
 
 External clients use a durable caller `key`, reused only for identical content. A reservation stores the root Session ID before native creation and flushes before acknowledging input. Native `session.create` alone is not the idempotency contract. Send uses an `inputId` and native prompt request-ID deduplication. Retain IDs after uncertain outcomes; inspect status before retrying. Cold or interrupted work requires explicit `continue: true`. A cold create retry can return reserved IDs with `requiresContinuation: true` and false or unknown acceptance.
@@ -26,7 +28,7 @@ Acceptance means admitted input, not processing or completion. Result reports na
 
 Disconnect never cancels native execution. `stop` fences managed input admission and role spawning, interrupts children before Lead, and rechecks native activity after child-result delivery. `accepted` describes cancellation requests; `quiescent` separately confirms observed execution inactivity. Pending inboxes and file changes remain intact.
 
-`activity` conservatively checks managed Teams, all live native Agents (including unmanaged Web work), inboxes and pending admission. `prepareShutdown` first fences new native HTTP API requests and returns `safeToStop`. If unsafe it reopens admission. A successful response keeps admission closed so an owning process manager can terminate only its attributed host. It does not itself kill a process. Do not use process exit as completion evidence. Unknown/cold unfinished work prevents automatic teardown.
+`activity` conservatively checks managed Teams, all live native Agents (including unmanaged Web work), inboxes and pending admission. `prepareShutdown` first fences new native HTTP API requests and returns `safeToStop`. If unsafe it reopens admission. A successful response leases the admission fence for five seconds (`leaseExpiresAt`) so an owning process manager can terminate only its attributed host. It does not itself kill a process. If the response is lost or termination fails, the fence expires and HTTP admission reopens. Do not use process exit as completion evidence. Unknown/cold unfinished work prevents automatic teardown.
 
 ## Durable upgrades
 

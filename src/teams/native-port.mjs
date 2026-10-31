@@ -49,11 +49,13 @@ export class NativeSessionPort {
     const team = projections.values.agentTeam ?? null;
     const liveRoster = agent === undefined ? null : this.ctx.agentTeams.listMembers(agent);
     const members = [];
+    const cuts = new Map([[sessionId, projections.asOfSeq]]);
     for (const member of team?.members ?? []) {
       const native = liveRoster?.find(row => row.id === member.id);
       const live = this.ctx.agents.get(member.id);
       let current = member.id === sessionId ? projections : null;
       if (member.id !== sessionId) current = await this.projections(member.id);
+      if (current?.kind === 'sequenced') cuts.set(member.id, current.asOfSeq);
       const pending = current?.kind === 'sequenced' ? current.values.inbox : null;
       members.push({
         id: member.id, name: member.name, role: member.role, phase: member.phase,
@@ -65,23 +67,35 @@ export class NativeSessionPort {
         lastTurnOutcome: current?.kind === 'sequenced' ? current.values.dshBridge?.lastEnd?.reason ?? null : null,
       });
     }
+    const bindings = this.roles ? await this.roles.bindings(sessionId) : [];
+    const rootNow = this.ctx.agents.get(sessionId);
+    const rosterNow = rootNow === undefined ? null : this.ctx.agentTeams.listMembers(rootNow);
+    const changed = rootNow !== agent || [...cuts].some(([id, cut]) => {
+      const live = this.ctx.sessions.get(id);
+      return typeof live?.seq === 'number' && live.seq - 1 !== cut;
+    });
+    for (const member of members) {
+      member.runtimeState = this.ctx.agents.get(member.id)?.status ?? 'unloaded';
+      member.nativeStatus = rosterNow?.find(row => row.id === member.id)?.status ?? null;
+    }
     const pendingTasks = (team?.tasks ?? []).filter(task => task.status === 'pending' || task.status === 'in_progress').length;
-    const active = rootTurnState === 'running' || members.some(member => member.runtimeState === 'running' || member.nativeStatus === 'running');
+    const active = rootNow?.status === 'running' || rootTurnState === 'running' || members.some(member => member.runtimeState === 'running' || member.nativeStatus === 'running');
     const provisioning = members.some(member => member.phase === 'provisioning' || member.nativeStatus === 'provisioning');
     const failed = team?.failure !== undefined || members.some(member => member.phase === 'failed' || member.nativeStatus === 'failed');
     const pending = queued || pendingTasks > 0 || members.some(member => (member.pendingInputs ?? 0) > 0);
-    const unknown = agent === undefined || team === null || liveRoster === null || members.some(member => member.nativeStatus === null || !member.observationAvailable);
+    const unknown = changed || agent === undefined || team === null || liveRoster === null || members.some(member => member.nativeStatus === null || !member.observationAvailable);
     const childInterrupted = members.some(member => member.id !== sessionId && member.openTurn === true && member.runtimeState !== 'running');
     const childIncomplete = members.some(member => member.id !== sessionId && (member.openTurn === true || member.lastTurnOutcome !== 'completed'));
-    const rootTurnCompleted = rootTurnState === 'completed';
+    const rootTurnCompleted = !changed && rootTurnState === 'completed';
     const teamCompleted = active || provisioning || failed || pending || !rootTurnCompleted ? false : unknown ? null : !childIncomplete;
     const activityState = active ? 'running' : provisioning ? 'provisioning' : failed ? 'failed' : pending ? 'pending' : unknown ? 'unknown' : childInterrupted ? 'interrupted' : childIncomplete ? 'incomplete' : 'quiescent';
     return {
       sessionId,
       asOfSeq: projections.asOfSeq,
-      runtimeState: agent === undefined ? 'unloaded' : agent.status,
+      runtimeState: rootNow === undefined ? 'unloaded' : rootNow.status,
       taskState: activityState === 'quiescent' ? rootTurnState : activityState,
-      rootTurnState,
+      rootTurnState: changed ? (rootNow?.status === 'running' ? 'running' : 'unknown') : rootTurnState,
+      consistent: !changed,
       rootTurnCompleted,
       teamCompleted,
       teamActivity: { state: activityState, pendingTasks, members },
@@ -93,7 +107,7 @@ export class NativeSessionPort {
         selected: agent?.model.current() ?? null,
         lastUsed: projections.values.modelSelection?.lastUsed ?? null,
       },
-      members: this.roles ? await this.roles.bindings(sessionId) : [],
+      members: bindings,
       usage: null,
       fees: null,
     };
@@ -133,7 +147,7 @@ export class NativeSessionPort {
         // Allow native child-delivery microtasks to settle, then inspect afresh.
         await new Promise(resolve => setTimeout(resolve, 10));
         const after = await this.snapshot(sessionId);
-        const stillActive = after.runtimeState === 'running' || after.teamActivity.members.some(member => member.runtimeState === 'running' || member.nativeStatus === 'running' || member.phase === 'provisioning');
+        const stillActive = this.roles?.tails?.has(sessionId) || after.runtimeState === 'running' || after.teamActivity.members.some(member => member.runtimeState === 'running' || member.nativeStatus === 'running' || member.phase === 'provisioning');
         if (!stillActive && pass > 0) { quiescent = true; break; }
       }
       return { teamId: sessionId, accepted: [...outcomes.values()].every(item => item.cancellation !== 'failed'), quiescent,

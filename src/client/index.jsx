@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { remote } from '../settings/remote.mjs';
 import { remote as teamsRemote } from '../teams/remote.mjs';
+import { loadCreationDraft, saveCreationDraft, clearCreationDraft } from './creation-draft.mjs';
 
 export const inject = ['remote', 'remote.session', 'slots', 'configForms', 'uiWorkspace'];
 const clone = value => structuredClone(value);
@@ -10,14 +11,20 @@ const field = { display: 'grid', gap: 5, marginBlock: 10 };
 const control = { boxSizing: 'border-box', width: '100%', padding: 8, border: '1px solid #8886', borderRadius: 5, background: 'transparent', color: 'inherit', font: 'inherit' };
 
 function CreateTeam({ create, open }) {
-  const [cwd, setCwd] = useState(''), [task, setTask] = useState('');
-  const [request, setRequest] = useState(null), [busy, setBusy] = useState(false);
-  const [receipt, setReceipt] = useState(null), [error, setError] = useState('');
+  const [saved] = useState(() => loadCreationDraft());
+  const [cwd, setCwd] = useState(saved?.request.cwd ?? ''), [task, setTask] = useState(saved?.request.text ?? '');
+  const [request, setRequest] = useState(saved?.request ?? null), [busy, setBusy] = useState(false);
+  const [receipt, setReceipt] = useState(saved?.receipt ?? null), [error, setError] = useState('');
   const submit = async event => {
     event.preventDefault();
     const input = request ?? { key: crypto.randomUUID(), cwd, text: task };
     setRequest(input); setBusy(true); setError('');
-    try { setReceipt(await create(input)); }
+    try {
+      saveCreationDraft(input);
+      const result = await create(input);
+      saveCreationDraft(input, result);
+      setReceipt(result);
+    }
     catch (failure) { setError(failure.message); }
     finally { setBusy(false); }
   };
@@ -31,7 +38,7 @@ function CreateTeam({ create, open }) {
       {error && <p role="alert">{error} Retrying preserves this request and its Team identity.</p>}
     </form>
     {receipt && <p role="status">Team {receipt.teamId}. {receipt.accepted === true ? 'Input accepted; processing and completion are shown in the Session.' : 'Inspect the Session before explicitly continuing.'} <button onClick={() => open(receipt.sessionId)}>Open Team</button></p>}
-    {(receipt || error) && <button type="button" disabled={busy} onClick={() => { setRequest(null); setReceipt(null); setError(''); setTask(''); }}>Start a separate request</button>}
+    {(receipt || error) && <button type="button" disabled={busy} onClick={() => { clearCreationDraft(); setRequest(null); setReceipt(null); setError(''); setTask(''); }}>Start a separate request</button>}
   </div>;
 }
 

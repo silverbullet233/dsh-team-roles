@@ -55,6 +55,7 @@ export class ManagedTeams {
 
   async close() {
     this.closing = true;
+    clearTimeout(this.shutdownLease);
     await Promise.allSettled([...this.pending]);
   }
 
@@ -74,9 +75,20 @@ export class ManagedTeams {
       case 'prepareShutdown':
         object(params, []);
         this.quiescing = true;
+        // Decide before the first await: an already admitted Web writer must
+        // settle before a fresh native activity baseline can be trusted.
+        if ((this.httpAdmissions ?? 0) > 1 || this.pending.size > 0) {
+          this.quiescing = false;
+          return { safeToStop: false, reason: 'admissions-in-flight' };
+        }
         try {
           const activity = await this.activity();
-          if (activity.safeToStop) this.closing = true;
+          if (activity.safeToStop) {
+            const leaseExpiresAt = Date.now() + 5000;
+            this.shutdownLease = setTimeout(() => { this.quiescing = false; }, 5000);
+            this.shutdownLease.unref();
+            return { ...activity, leaseExpiresAt };
+          }
           else this.quiescing = false;
           return activity;
         } catch (error) { this.quiescing = false; throw error; }
@@ -96,8 +108,10 @@ export class ManagedTeams {
       try {
         const state = await this.native.snapshot(record.sessionId);
         const activity = state.teamActivity;
+        const coldComplete = state.runtimeState === 'unloaded' && state.rootTurnCompleted && !state.team?.failure && activity.pendingTasks === 0
+          && activity.members.every(member => member.observationAvailable && !member.openTurn && member.pendingInputs === 0 && member.lastTurnOutcome === 'completed' && member.phase !== 'provisioning');
         if (activity.members.some(member => member.openTurn || member.pendingInputs !== 0 || member.phase === 'provisioning')
-          || activity.pendingTasks > 0 || state.observation.open || ['running', 'provisioning', 'unknown'].includes(activity.state)) unsettled.push(record.sessionId);
+          || activity.pendingTasks > 0 || state.observation.open || ['running', 'provisioning'].includes(activity.state) || (activity.state === 'unknown' && !coldComplete)) unsettled.push(record.sessionId);
       } catch { unsettled.push(record.sessionId); }
     }
     // Inspect unmanaged Web Sessions too, including their native inboxes.
@@ -106,7 +120,9 @@ export class ManagedTeams {
       const inbox = projections?.kind === 'sequenced' ? projections.values.inbox : null;
       if (inbox === null || inbox === undefined || (inbox['next-turn']?.length ?? 0) + (inbox['next-step']?.length ?? 0) > 0) unsettled.push(agent.id);
     }
-    return { safeToStop: this.pending.size <= 1 && (this.httpAdmissions ?? 0) <= 1 && busy.length === 0 && unsettled.length === 0,
+    const runningNow = this.native.ctx.agents.list().filter(agent => agent.status === 'running').map(agent => agent.id);
+    busy.push(...runningNow.filter(id => !busy.includes(id)));
+    return { safeToStop: (this.native.roles?.tails?.size ?? 0) === 0 && this.pending.size <= 1 && (this.httpAdmissions ?? 0) <= 1 && busy.length === 0 && unsettled.length === 0,
       running: busy, unsettled: [...new Set(unsettled)], admissions: Math.max(0, this.pending.size - 1) };
   }
 

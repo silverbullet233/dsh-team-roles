@@ -24,7 +24,7 @@ function fixture() {
       interrupt(lead, name) { calls.push(['interrupt', lead.id, name]); agents.get('child').status = 'idle'; },
     },
   };
-  return { port: new NativeSessionPort(ctx, roles), calls, agents, children, observation, projection };
+  return { ctx, port: new NativeSessionPort(ctx, roles), calls, agents, children, observation, projection };
 }
 
 test('healthy active native turn accepts queue/steer without explicit continuation', async () => {
@@ -132,4 +132,21 @@ test('an inactive child open turn cannot reuse an earlier completed outcome as T
   assert.equal(child.nativeStatus, 'inactive');
   assert.equal(child.openTurn, true);
   assert.equal(child.lastTurnOutcome, 'completed');
+});
+
+test('a Lead waking during awaited child reads cannot be reported as completed', async () => {
+  const { port, ctx, agents, children, observation } = fixture();
+  observation.lastEnd = { turn: 1, reason: 'completed' };
+  const root = { id: 'root', status: 'idle', model: { current: () => undefined } };
+  agents.set('root', root);
+  children.set('child', { kind: 'sequenced', asOfSeq: 7, values: { dshBridge: { ...initialObservation(), lastEnd: { turn: 1, reason: 'completed' } }, inbox: { 'next-turn': [], 'next-step': [] } } });
+  const invoke = ctx.typertGateway.invoke;
+  ctx.typertGateway.invoke = request => {
+    if (request.args.request.sessionId === 'child') root.status = 'running';
+    return invoke(request);
+  };
+  const result = await port.snapshot('root');
+  assert.equal(result.runtimeState, 'running');
+  assert.equal(result.taskState, 'running');
+  assert.equal(result.teamCompleted, false);
 });

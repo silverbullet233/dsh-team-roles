@@ -217,10 +217,16 @@ test('native cancellation and missing approval answerers fail closed without rol
   await until(() => host.requests.filter((item) => item.sessionId === created.teamId).length === 2);
   const member = await host.ctx.dshRoles.spawn(lead, { name: 'cancel-one', role: 'left', prompt: 'Synthetic cancellable member.', signal: new AbortController().signal });
   await until(() => host.requests.some((item) => item.sessionId === member.member.id));
+  const second = await host.ctx.dshRoles.spawn(lead, { name: 'cancel-two', role: 'right', prompt: 'Synthetic second cancellable member.', signal: new AbortController().signal });
+  await until(() => host.requests.some(item => item.sessionId === second.member.id));
   const stoppedTeam = await host.client.request('stop', { teamId: created.teamId });
   assert.equal(stoppedTeam.accepted, true);
+  assert.equal(stoppedTeam.quiescent, true);
+  assert.equal(lead.status, 'idle');
+  assert.notEqual(host.ctx.agents.get(second.member.id)?.status, 'running');
+  assert(inactiveMember(host, lead, second.member.id));
   assert.equal(stoppedTeam.outcomes.find((item) => item.sessionId === member.member.id).cancellation, 'requested');
-  // A native child's settlement may wake the Lead with a new result-delivery turn.
+  // Child settlement can wake the Lead; stop must observe that turn settling too.
   await until(async () => {
     const current = await host.ctx.sessionController.projections({ sessionId: member.member.id }, new AbortController().signal);
     return current?.values.dshBridge.lastEnd?.reason === 'aborted' && inactiveMember(host, lead, member.member.id);
@@ -595,4 +601,23 @@ test('a native member model selection survives cold recovery independently of it
   assert.equal(recovered.configured.provider, 'fixture-left');
   assert.equal(recovered.lastRequest.provider, 'fixture-new');
   assert.equal(recovered.selected, null);
+});
+
+test('stop cannot claim quiescence while role provisioning is admitted but not yet in the native roster', { timeout: 15000 }, async t => {
+  const host = await fixture(t, { respond: options => options.provider === 'fixture-lead' ? textChunks('SYNTHETIC_LEAD') : 'hang' });
+  const created = await host.client.request('create', { key: 'pending-spawn-stop', cwd: host.fixtureRoot, text: 'Synthetic provisioning race.' });
+  const lead = host.ctx.agents.get(created.teamId); await lead.whenIdle();
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  t.after(() => release.resolve());
+  const spawn = host.ctx.agentTeams.spawnTeammate.bind(host.ctx.agentTeams);
+  host.ctx.agentTeams.spawnTeammate = async (...args) => { entered.resolve(); await release.promise; return spawn(...args); };
+  const provisioning = host.ctx.dshRoles.spawn(lead, { name: 'pending-worker', role: 'left', prompt: 'Synthetic pending member.', signal: new AbortController().signal });
+  await entered.promise;
+  const stopped = await host.client.request('stop', { teamId: created.teamId });
+  assert.equal(stopped.quiescent, false);
+  release.resolve();
+  const member = await provisioning;
+  await until(() => host.requests.some(request => request.sessionId === member.member.id));
+  assert.equal((await host.client.request('stop', { teamId: created.teamId })).quiescent, true);
+  assert.equal(lead.status, 'idle');
 });
