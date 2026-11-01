@@ -1,5 +1,7 @@
-/** Calls the same public Remote methods used by the native Web client. */
+/** Public native Session Remote calls and create-time permission services. */
 import { TeamError } from './errors.mjs';
+import { Session } from '@deepseek-ai/dsh-session';
+import { createUserMessage } from '@deepseek-ai/dsh-llm';
 
 export class NativeSessionPort {
   constructor(ctx, roles) {
@@ -22,12 +24,86 @@ export class NativeSessionPort {
 
   create(request) { return this.call('create', request); }
   catalog() { return this.roles.catalog(); }
+  permissionServices(required = false) {
+    const get = name => typeof this.ctx.get === 'function' ? this.ctx.get(name) : this.ctx[name];
+    const presets = get('permissionPresets'), sandbox = get('sandboxPolicy'), approval = get('approval');
+    if (presets && sandbox && approval) return { presets, sandbox, approval };
+    if (required) throw new TeamError('CAPABILITY_MISSING', 'Native permission preset, sandbox and approval services are required for an explicit preset.');
+    return null;
+  }
+  resolvePermissionPreset(name) {
+    const { presets } = this.permissionServices(true);
+    if (!presets.catalog().options.some(option => option.value === name)) throw new TeamError('PERMISSION_PRESET_UNAVAILABLE', 'Select an exact available native permission preset from health.');
+    const spec = presets.resolve(name);
+    if (!['read-only', 'workspace-write', 'danger-full-access'].includes(spec.sandbox) || !['ask', 'never'].includes(spec.approval)) throw new TeamError('CAPABILITY_MISSING', 'Native permission preset has an unsupported bundle.');
+    return { preset: name, sandboxMode: spec.sandbox, approvalPolicy: spec.approval };
+  }
+  permissionCatalog() {
+    const services = this.permissionServices();
+    if (!services) return null;
+    const catalog = services.presets.catalog();
+    return { ...structuredClone(catalog), options: catalog.options.map(option => ({ ...option, ...this.resolvePermissionPreset(option.value) })) };
+  }
+  async permissionSnapshot(sessionId) {
+    const services = this.permissionServices();
+    if (!services) return null;
+    let session = this.ctx.sessions.get(sessionId);
+    let asOfSeq = session ? session.seq - 1 : -1;
+    if (!session) {
+      const query = typeof this.ctx.get === 'function' ? this.ctx.get('sessionQuery') : this.ctx.sessionQuery;
+      if (!query?.readSession) throw new TeamError('CAPABILITY_MISSING', 'A read-only native Session query is required to verify restored permissions.');
+      const loaded = await query.readSession(sessionId);
+      // Detached replay can append a synthetic seed boundary; report only persisted events.
+      asOfSeq = loaded.events.at(-1)?.seq ?? -1;
+      session = Session.create(sessionId, loaded.events, loaded.session, loaded.inheritedEventCount, this.ctx.sessions.messageProjections);
+    }
+    return this.permissionsOf(session, asOfSeq);
+  }
+  permissionsOf(session, asOfSeq = session.seq - 1) {
+    const services = this.permissionServices(true);
+    return { preset: services.presets.current(session), sandbox: structuredClone(services.sandbox.resolve({ session })), approvalPolicy: services.approval.overrideOf(session) ?? services.approval.config.policy ?? 'ask', asOfSeq };
+  }
+  applyPermissionPreset(sessionId, intent) {
+    const current = this.resolvePermissionPreset(intent.preset);
+    if (current.sandboxMode !== intent.sandboxMode || current.approvalPolicy !== intent.approvalPolicy) throw new TeamError('PERMISSION_MISMATCH', 'Native preset definition changed before initialization.');
+    const session = this.ctx.sessions.get(sessionId), agent = this.ctx.agents.get(sessionId);
+    if (!session || agent?.session !== session || agent.status !== 'idle' || session.header.parentSession || session.header.isSeeded || session.firstLiveSeq !== 0
+      || agent.inbox.nextTurn.length || agent.inbox.nextStep.length || this.ctx.agentTeams.listMembers(agent).some(member => member.id !== sessionId)
+      || session.snapshotEvents().some(event => ['turn/start', 'user/message', 'assistant/message', 'tool/call'].includes(event.type))) {
+      throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', 'Permission presets may only be applied to a fresh blank Lead before any task or member.');
+    }
+    this.permissionServices(true).presets.set(session, intent.preset);
+  }
   workspacePath(id) {
     const workspace = this.ctx.workspaceRegistry?.get(id);
     if (!workspace) throw new TeamError('WORKSPACE_MISSING', 'The requested native workspace does not exist.');
     return workspace.path;
   }
-  prompt(request) { return this.call('prompt', request); }
+  async prompt(request, verify) {
+    if (!verify) return this.call('prompt', request);
+    // Public native Host-domain API; keep all awaits before the final check + synchronous queue write.
+    const resolved = await this.ctx.sessionController.resolveAgent(request.sessionId);
+    if ('error' in resolved) throw resolved.error;
+    const { agent } = resolved;
+    if (request.content.some(part => part.type !== 'text')) throw new TeamError('INVALID_REQUEST', 'Managed input is text-only.');
+    const attachments = this.ctx.get('attachments'), uploads = this.ctx.get('fileUploads');
+    const content = await attachments.admitPromptContent(request.content);
+    const message = createUserMessage({ content, source: { kind: 'user', rpcId: request.requestId } });
+    if (this.ctx.agents.get(agent.id) !== agent) throw new TeamError('SESSION_MISSING', 'The Lead was disposed during input admission.');
+    const binding = uploads.bindPrompt(agent, [], request.requestId);
+    try {
+      verify(this.permissionsOf(agent.session));
+      const matches = message => message.source?.kind === 'user' && message.source.rpcId === request.requestId;
+      const duplicate = agent.inbox.nextTurn.some(matches) || agent.inbox.nextStep.some(matches)
+        || agent.session.snapshotEvents().some(event => event.type === 'user/message' && matches(event.data));
+      if (!duplicate) {
+        if (request.mode === 'steer') agent.steer(message);
+        else agent.followup(message);
+      }
+      binding.commit();
+      return { accepted: true };
+    } finally { binding[Symbol.dispose](); }
+  }
   projections(sessionId) { return this.call('projections', { sessionId }); }
   cancel(sessionId) { return this.call('cancel', { sessionId }); }
 
