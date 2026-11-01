@@ -1,6 +1,7 @@
 /** Public native Session Remote calls and create-time permission services. */
 import { TeamError } from './errors.mjs';
 import { Session } from '@deepseek-ai/dsh-session';
+import { createUserMessage } from '@deepseek-ai/dsh-llm';
 
 export class NativeSessionPort {
   constructor(ctx, roles) {
@@ -56,6 +57,10 @@ export class NativeSessionPort {
       asOfSeq = loaded.events.at(-1)?.seq ?? -1;
       session = Session.create(sessionId, loaded.events, loaded.session, loaded.inheritedEventCount, this.ctx.sessions.messageProjections);
     }
+    return this.permissionsOf(session, asOfSeq);
+  }
+  permissionsOf(session, asOfSeq = session.seq - 1) {
+    const services = this.permissionServices(true);
     return { preset: services.presets.current(session), sandbox: structuredClone(services.sandbox.resolve({ session })), approvalPolicy: services.approval.overrideOf(session) ?? services.approval.config.policy ?? 'ask', asOfSeq };
   }
   applyPermissionPreset(sessionId, intent) {
@@ -74,7 +79,31 @@ export class NativeSessionPort {
     if (!workspace) throw new TeamError('WORKSPACE_MISSING', 'The requested native workspace does not exist.');
     return workspace.path;
   }
-  prompt(request) { return this.call('prompt', request); }
+  async prompt(request, verify) {
+    if (!verify) return this.call('prompt', request);
+    // Public native Host-domain API; keep all awaits before the final check + synchronous queue write.
+    const resolved = await this.ctx.sessionController.resolveAgent(request.sessionId);
+    if ('error' in resolved) throw resolved.error;
+    const { agent } = resolved;
+    if (request.content.some(part => part.type !== 'text')) throw new TeamError('INVALID_REQUEST', 'Managed input is text-only.');
+    const attachments = this.ctx.get('attachments'), uploads = this.ctx.get('fileUploads');
+    const content = await attachments.admitPromptContent(request.content);
+    const message = createUserMessage({ content, source: { kind: 'user', rpcId: request.requestId } });
+    if (this.ctx.agents.get(agent.id) !== agent) throw new TeamError('SESSION_MISSING', 'The Lead was disposed during input admission.');
+    const binding = uploads.bindPrompt(agent, [], request.requestId);
+    try {
+      verify(this.permissionsOf(agent.session));
+      const matches = message => message.source?.kind === 'user' && message.source.rpcId === request.requestId;
+      const duplicate = agent.inbox.nextTurn.some(matches) || agent.inbox.nextStep.some(matches)
+        || agent.session.snapshotEvents().some(event => event.type === 'user/message' && matches(event.data));
+      if (!duplicate) {
+        if (request.mode === 'steer') agent.steer(message);
+        else agent.followup(message);
+      }
+      binding.commit();
+      return { accepted: true };
+    } finally { binding[Symbol.dispose](); }
+  }
   projections(sessionId) { return this.call('projections', { sessionId }); }
   cancel(sessionId) { return this.call('cancel', { sessionId }); }
 

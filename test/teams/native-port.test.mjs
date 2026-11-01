@@ -214,3 +214,23 @@ test('optional Cordis services are read through get without undeclared property 
   assert.equal(port.permissionCatalog(), null); assert.equal(await port.permissionSnapshot('root'), null);
   assert.throws(() => port.resolvePermissionPreset('danger-full-access'), { code: 'CAPABILITY_MISSING' });
 });
+
+test('guarded native prompts check after attachment/binding awaits, then enqueue synchronously and deduplicate', async () => {
+  for (const change of ['attachments', 'binding', 'none']) {
+    const { port, ctx, session, agents } = permissionFixture(), queued = [];
+    const agent = agents.get('root');
+    agent.followup = message => { queued.push(message); agent.inbox.nextTurn.push(message); };
+    agent.steer = agent.followup;
+    ctx.sessionController.resolveAgent = async () => ({ agent });
+    ctx.get = name => ({ attachments: { admitPromptContent: async content => { if (change === 'attachments') session.mode = 'danger-full-access'; return content; } },
+      fileUploads: { bindPrompt() { if (change === 'binding') session.mode = 'danger-full-access'; return { commit() {}, [Symbol.dispose]() {} }; } } }[name] ?? ctx[name]);
+    const request = { sessionId: 'root', requestId: 'safe-input', content: [{ type: 'text', text: 'Synthetic input.' }] };
+    const verify = actual => { if (actual.sandbox.mode !== 'read-only') throw Object.assign(new Error('Changed permissions'), { code: 'PERMISSION_MISMATCH' }); };
+    if (change !== 'none') {
+      await assert.rejects(port.prompt(request, verify), { code: 'PERMISSION_MISMATCH' }); assert.equal(queued.length, 0);
+    } else {
+      await port.prompt(request, verify); await port.prompt(request, verify);
+      assert.equal(queued.length, 1); assert.equal(queued[0].source.rpcId, request.requestId);
+    }
+  }
+});

@@ -467,8 +467,10 @@ test('durable admission metadata reconciles native create and prompt reply-loss 
   port = new LostCreateReply(host.ctx, host.ctx.dshRoles);
   let bridge = new ManagedTeams({ native: port, store, allowedRoots: [host.fixtureRoot] });
   const first = { key: 'create-window', text: 'Synthetic create crash window.', cwd: host.fixtureRoot };
-  await assert.rejects(bridge.create(first), /SYNTHETIC_LOST_CREATE_REPLY/u);
+  let lostReply;
+  await assert.rejects(bridge.create(first), error => { lostReply = error; return error.code === 'NATIVE_FAILURE'; });
   const reserved = await store.get('key', first.key);
+  assert(lostReply.message.includes(reserved.sessionId));
   assert.equal(reserved.stage, 'reserved');
   assert(host.ctx.agents.get(reserved.sessionId));
   assert.equal(host.requests.length, 0);

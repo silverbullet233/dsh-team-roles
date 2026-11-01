@@ -168,6 +168,7 @@ export class ManagedTeams {
       throw new TeamError('WORKSPACE_DENIED', 'The native workspace path differs from cwd.');
     }
     const hash = digest({ prompt, cwd, workspaceId, agentPreset, leadRole, permissionPreset });
+    let reservedId;
     return this.serial(`key:${key}`, async () => {
       let record = await this.store.get('key', key);
       if (record !== undefined && record.digest !== hash) throw new TeamError('CONTENT_CONFLICT', 'The create key is already bound to different content.');
@@ -176,6 +177,7 @@ export class ManagedTeams {
         record = { sessionId: randomUUID(), inputId: `create-${digest(key)}`, digest: hash, cwd, stage: 'reserved', createdAt: Date.now(), ...(permissionPreset === undefined ? {} : { permissionPreset, permissionIntent }) };
         await this.store.set('key', key, record);
       }
+      reservedId = record.sessionId;
       await this.store.set('team', record.sessionId, record);
       const existing = await this.native.projections(record.sessionId);
       if (existing === null) {
@@ -192,7 +194,7 @@ export class ManagedTeams {
             verifyPermissions(record.permissionIntent, permissions);
             record = { ...record, permissions };
           } catch (error) {
-            if (error instanceof TeamError) throw error;
+            if (error instanceof TeamError) throw new TeamError(error.code, `Team ${record.sessionId}: ${error.message}`);
             throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', `Permission initialization for Team ${record.sessionId} did not complete. No task was submitted; inspect the reserved Session before using a new key.`);
           }
         }
@@ -212,6 +214,11 @@ export class ManagedTeams {
         acceptance = { accepted: receipt === undefined ? false : null, processed: null, requiresContinuation: true };
       }
       return { teamId: record.sessionId, sessionId: record.sessionId, inputId: record.inputId, ...acceptance, permissions };
+    }).catch(error => {
+      if (reservedId && !(error instanceof TeamError && error.message.includes(reservedId))) {
+        throw new TeamError(error instanceof TeamError ? error.code : 'NATIVE_FAILURE', `Team ${reservedId}: ${error instanceof TeamError ? error.message : 'Native creation or input admission failed. Inspect this reserved Session before retrying.'}`);
+      }
+      throw error;
     });
   }
 
@@ -237,7 +244,12 @@ export class ManagedTeams {
         throw new TeamError('CONTINUATION_REQUIRED', `Explicit continue=true is required for Team ${params.teamId}; retry send with the same inputId.`);
       }
       await this.store.set('input', receiptKey, { teamId: params.teamId, inputId, digest: hash, accepted: false });
-      await this.native.prompt({ requestId: inputId, sessionId: params.teamId, mode, content: [{ type: 'text', text: prompt }] });
+      const verify = admission.permissionPreset === undefined ? undefined : actual => {
+        const intent = this.native.resolvePermissionPreset(admission.permissionPreset);
+        if (!isDeepStrictEqual(intent, admission.permissionIntent)) throw new TeamError('PERMISSION_MISMATCH', `Team ${admission.sessionId}: the permission preset definition changed during input admission.`);
+        verifyPermissions(intent, actual, admission.permissions);
+      };
+      await this.native.prompt({ requestId: inputId, sessionId: params.teamId, mode, content: [{ type: 'text', text: prompt }] }, verify);
       await this.native.flush(params.teamId);
       await this.store.set('input', receiptKey, { teamId: params.teamId, inputId, digest: hash, accepted: true });
       return { teamId: params.teamId, inputId, accepted: true, processed: null, duplicate: false };

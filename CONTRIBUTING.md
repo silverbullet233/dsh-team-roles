@@ -16,7 +16,7 @@ All native dependencies come from the exact supported npm release, `0.2.2-alpha.
 mkdir -p dist/release
 npm pack --dry-run
 npm pack --pack-destination dist/release
-node scripts/release/check-tarball.mjs dist/release/dsh-team-roles-0.5.0.tgz
+node scripts/release/check-tarball.mjs dist/release/dsh-team-roles-0.6.0.tgz
 ```
 
 The check validates package contents and writes `SHA256SUMS`. For native install/load acceptance, run `node scripts/test-portable-package.mjs ./node_modules/@deepseek-ai/dsh <built-tarball>`; it creates a temporary profile and performs no paid inference.

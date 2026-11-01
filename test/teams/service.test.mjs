@@ -81,8 +81,10 @@ test('create recovery returns reserved IDs before explicit initial admission aft
   const params = { key: 'first-admission-crash', cwd: directory, text: 'Synthetic 47' };
   const snapshot = native.snapshot;
   native.snapshot = async () => { throw new Error('synthetic crash before initial admission'); };
-  await assert.rejects(bridge.dispatch('create', params), /synthetic crash/);
+  let failure;
+  await assert.rejects(bridge.dispatch('create', params), error => { failure = error; return error.code === 'NATIVE_FAILURE'; });
   const reserved = await store.get('key', params.key);
+  assert(failure.message.includes(reserved.sessionId));
   assert.equal(reserved.stage, 'created');
   assert.equal(await store.get('input', [reserved.sessionId, reserved.inputId]), undefined);
   native.snapshot = snapshot;
@@ -111,8 +113,10 @@ test('create recovery leaves acceptance unknown after an initial prompt with an 
     await flush.call(this, id);
     if (this.calls.some(call => call[0] === 'prompt')) throw new Error('synthetic crash after initial prompt');
   };
-  await assert.rejects(bridge.dispatch('create', params), /synthetic crash/);
+  let failure;
+  await assert.rejects(bridge.dispatch('create', params), error => { failure = error; return error.code === 'NATIVE_FAILURE'; });
   const reserved = await store.get('key', params.key);
+  assert(failure.message.includes(reserved.sessionId));
   assert.equal((await store.get('input', [reserved.sessionId, reserved.inputId])).accepted, false);
   assert.equal(native.accepted.has(reserved.inputId), true);
   native.flush = flush;

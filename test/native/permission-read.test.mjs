@@ -33,3 +33,21 @@ test('actual native permission projections read live and persisted defaults with
   assert.equal(host.ctx.agents.get(sessionId), undefined); assert.equal(host.ctx.sessions.get(sessionId), undefined);
   assert.equal(host.requests.length, 0);
 });
+
+test('guarded text admission uses the public native Agent queue with durable request deduplication', async t => {
+  const root = await mkdtemp('/tmp/dsh-permission-prompt-');
+  const host = await mountNativeHost({ root });
+  const port = new NativeSessionPort(host.ctx, host.ctx.dshRoles);
+  t.after(async () => { await port.close(); await host.dispose(); await rm(root, { recursive: true, force: true }); });
+  host.ctx.provide('shell', { sandboxMode: 'workspace-write' });
+  await host.ctx.plugin(SandboxPolicy, { mode: 'workspace-write', workspaceRoot: host.fixtureRoot });
+  await host.ctx.plugin(PermissionPresets, {});
+  host.ctx.get('permissionPresets').set = () => { throw new Error('No preset switch in this fixture'); };
+  const { sessionId } = await host.ctx.sessionController.create({ cwd: host.fixtureRoot });
+  const request = { sessionId, requestId: 'guarded-input', content: [{ type: 'text', text: 'Synthetic guarded input.' }] };
+  const verify = actual => assert.equal(actual.sandbox.mode, 'workspace-write');
+  await port.prompt(request, verify);
+  await host.ctx.agents.get(sessionId).whenIdle();
+  await port.prompt(request, verify);
+  assert.equal(host.requests.length, 1);
+});
