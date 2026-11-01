@@ -150,3 +150,67 @@ test('a Lead waking during awaited child reads cannot be reported as completed',
   assert.equal(result.taskState, 'running');
   assert.equal(result.teamCompleted, false);
 });
+
+function permissionFixture() {
+  const value = fixture(), { ctx, agents, projection, calls } = value;
+  const session = { id: 'root', header: { cwd: '/synthetic', isSeeded: false }, firstLiveSeq: 0, seq: 0, preset: 'read-only', mode: 'read-only', approval: 'ask', snapshotEvents: () => [] };
+  const specs = { 'read-only': { sandbox: 'read-only', approval: 'ask' }, 'danger-full-access': { sandbox: 'danger-full-access', approval: 'never' } };
+  const latest = (s, type, key, fallback) => s.snapshotEvents().findLast(event => event.type === type)?.data[key] ?? fallback;
+  ctx.permissionPresets = { catalog: () => ({ options: Object.keys(specs).map(value => ({ value, name: value })), defaultPreset: 'read-only' }), resolve: name => { calls.push(['resolve', name]); return specs[name]; }, current: s => latest(s, 'permission/preset', 'preset', s.preset), set: (s, name) => { calls.push(['set', name]); s.preset = name; s.mode = specs[name].sandbox; s.approval = specs[name].approval; s.seq += 3; } };
+  ctx.sandboxPolicy = { resolve: ({ session: s }) => ({ mode: latest(s, 'sandbox/mode', 'mode', s.mode), workspaceRoot: s.header.cwd, sessionId: s.id }) };
+  ctx.approval = { config: { policy: 'ask' }, overrideOf: s => latest(s, 'approval/policy', 'policy', s.approval) };
+  ctx.sessions.get = () => session;
+  agents.set('root', { id: 'root', session, status: 'idle', inbox: { nextTurn: [], nextStep: [] } });
+  projection.values.agentTeam.members.length = 1;
+  return { ...value, session, specs };
+}
+
+test('native permission names are catalog-validated and reported using actual configured bundles', async () => {
+  const { port, calls, specs } = permissionFixture();
+  for (const name of ['missing', 'constructor', '__proto__', 'custom']) assert.throws(() => port.resolvePermissionPreset(name), { code: 'PERMISSION_PRESET_UNAVAILABLE' });
+  assert.equal(calls.some(call => call[0] === 'resolve'), false);
+  specs['danger-full-access'] = { sandbox: 'workspace-write', approval: 'ask' };
+  assert.deepEqual(port.resolvePermissionPreset('danger-full-access'), { preset: 'danger-full-access', sandboxMode: 'workspace-write', approvalPolicy: 'ask' });
+  assert.equal(port.permissionCatalog().options[1].sandboxMode, 'workspace-write');
+});
+
+test('native preset writes are restricted to fresh blank roots and return effective knobs', async () => {
+  const { port, calls } = permissionFixture();
+  port.applyPermissionPreset('root', port.resolvePermissionPreset('danger-full-access'));
+  const actual = await port.permissionSnapshot('root');
+  assert.equal(actual.sandbox.mode, 'danger-full-access'); assert.equal(actual.approvalPolicy, 'never'); assert.equal(actual.asOfSeq, 2);
+  assert.equal(calls.filter(call => call[0] === 'set').length, 1);
+  for (const condition of ['running', 'inbox', 'seeded', 'restored', 'member', 'turn']) {
+    const { port, calls, session, agents, projection } = permissionFixture();
+    if (condition === 'running') agents.get('root').status = 'running';
+    if (condition === 'inbox') agents.get('root').inbox.nextTurn.push({});
+    if (condition === 'seeded') session.header.isSeeded = true;
+    if (condition === 'restored') session.firstLiveSeq = 3;
+    if (condition === 'member') projection.values.agentTeam.members.push({ id: 'child' });
+    if (condition === 'turn') session.snapshotEvents = () => [{ type: 'turn/start' }];
+    assert.throws(() => port.applyPermissionPreset('root', port.resolvePermissionPreset('danger-full-access')), { code: 'PERMISSION_INITIALIZATION_INCOMPLETE' });
+    assert.equal(calls.some(call => call[0] === 'set'), false);
+  }
+});
+
+test('cold permission verification replays a detached native Session without applying presets or activating it', async () => {
+  const { port, ctx, calls, agents } = permissionFixture();
+  agents.clear(); ctx.sessions.get = () => undefined;
+  ctx.sessionQuery = { readSession: async () => ({ session: { version: 4, id: 'root', createdAt: 0, cwd: '/synthetic', isSeeded: false }, inheritedEventCount: 0, events: [
+    { type: 'permission/preset', seq: 0, time: 0, data: { preset: 'danger-full-access' } },
+    { type: 'sandbox/mode', seq: 1, time: 0, data: { mode: 'danger-full-access' } },
+    { type: 'approval/policy', seq: 2, time: 0, data: { policy: 'never' } },
+  ] }) };
+  const snapshot = await port.permissionSnapshot('root');
+  assert.equal(snapshot.preset, 'danger-full-access'); assert.equal(snapshot.sandbox.mode, 'danger-full-access'); assert.equal(snapshot.approvalPolicy, 'never');
+  assert.equal(snapshot.asOfSeq, 2);
+  assert.equal(calls.some(call => call[0] === 'set'), false); assert.equal(agents.size, 0);
+});
+
+test('optional Cordis services are read through get without undeclared property access', async () => {
+  const { ctx, port } = fixture();
+  ctx.get = () => undefined;
+  Object.defineProperty(ctx, 'permissionPresets', { get() { throw new Error('Undeclared injected property'); } });
+  assert.equal(port.permissionCatalog(), null); assert.equal(await port.permissionSnapshot('root'), null);
+  assert.throws(() => port.resolvePermissionPreset('danger-full-access'), { code: 'CAPABILITY_MISSING' });
+});

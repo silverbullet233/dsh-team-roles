@@ -6,7 +6,7 @@ const id = z.string().min(1).max(256);
 const team = z.strictObject({ teamId: id });
 const requests = {
   health: z.strictObject({}), activity: z.strictObject({}), prepareShutdown: z.strictObject({}),
-  create: z.strictObject({ key: id, text, cwd: text, workspaceId: id.optional(), agentPreset: id.optional(), leadRole: id.optional() }),
+  create: z.strictObject({ key: id, text, cwd: text, workspaceId: id.optional(), agentPreset: id.optional(), leadRole: id.optional(), permissionPreset: id.optional() }),
   send: z.strictObject({ teamId: id, inputId: id, text, mode: z.enum(['queue', 'steer']).optional(), continue: z.boolean().optional() }),
   status: team, result: team, stop: team,
 };

@@ -7,7 +7,7 @@ Authenticate through the process launch URL's `/connect` exchange with `interact
 | Method | Request |
 | --- | --- |
 | `health` | `{}` |
-| `create` | `{ key, cwd, text, workspaceId?, agentPreset?, leadRole? }` |
+| `create` | `{ key, cwd, text, workspaceId?, agentPreset?, leadRole?, permissionPreset? }` |
 | `send` | `{ teamId, inputId, text, mode?: "queue" or "steer", continue?: boolean }` |
 | `status`, `result`, `stop` | `{ teamId }` |
 | `activity`, `prepareShutdown` | `{}` |
@@ -23,6 +23,14 @@ In **Settings → Team roles → Create a role-managed Team**, enter an allowed 
 External clients use a durable caller `key`, reused only for identical content. A reservation stores the root Session ID before native creation and flushes before acknowledging input. Native `session.create` alone is not the idempotency contract. Send uses an `inputId` and native prompt request-ID deduplication. Retain IDs after uncertain outcomes; inspect status before retrying. Cold or interrupted work requires explicit `continue: true`. A cold create retry can return reserved IDs with `requiresContinuation: true` and false or unknown acceptance.
 
 Acceptance means admitted input, not processing or completion. Result reports native turn and Team evidence separately. Lead completion does not imply child completion. Unloaded selections and unknown usage/fees remain null. Text input only; native workspace, tool and approval policies still apply. A passive API client cannot answer approvals.
+
+## Create-time permissions (unreleased)
+
+The additive API-1 capability `create-permission-preset` is absent from published 0.5.0. Health exposes native `permissionPresets.options` with resolved `sandboxMode` and `approvalPolicy`. After explicit user selection, pass an exact option value as `permissionPreset`; omission preserves native defaults. Do not infer a bundle from its name, automatically upgrade to avoid approval or fall back after refusal.
+
+The host applies the native preset only to a fresh blank root, flushes and verifies it before submitting the first task or allowing member creation. Create returns effective `permissions: { preset, sandbox, approvalPolicy, asOfSeq }`, or null if native permission services are unavailable and no preset was requested. Intent is part of the create digest. Identical retries and restored Sessions verify read-only; changed content, effective permissions, catalog definitions or partial initialization fail closed, including sends. An incomplete reservation is not automatically repaired: inspect its ID before creating another Team.
+
+The usual `danger-full-access` bundle is sandbox full access with approval `never`; configuration may redefine it. `never` denies still-required approval, not approve-all. New children snapshot parent sandbox and pin approval to `never`; later Lead changes do not update existing children. Workspace admission is not complete process confinement and presets grant no OS privileges. Existing Teams, global defaults and separate explicit approval decisions are unchanged.
 
 ## Stop and host lifetime
 

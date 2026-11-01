@@ -5,6 +5,14 @@ import { realpath } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { TeamError, object, text } from './errors.mjs';
 import { digest } from './private-store.mjs';
+import { isDeepStrictEqual } from 'node:util';
+
+function verifyPermissions(intent, actual, saved) {
+  if (!actual || actual.preset !== intent.preset || actual.sandbox?.mode !== intent.sandboxMode || actual.approvalPolicy !== intent.approvalPolicy
+    || (saved && (!isDeepStrictEqual(actual.sandbox, saved.sandbox) || actual.preset !== saved.preset || actual.approvalPolicy !== saved.approvalPolicy))) {
+    throw new TeamError('PERMISSION_MISMATCH', 'Effective native permissions differ from the verified create intent; no permission fallback or upgrade was attempted.');
+  }
+}
 
 /** Serialization is admission-only. DSH remains the sole execution scheduler. */
 export class ManagedTeams {
@@ -46,6 +54,16 @@ export class ManagedTeams {
     return record;
   }
 
+  async permissions(record) {
+    if (record.permissionPreset === undefined) return await this.native.permissionSnapshot?.(record.sessionId) ?? null;
+    if (record.stage !== 'created' || !record.permissionIntent || !record.permissions) throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', `Team ${record.sessionId} has unverified initial permissions; inspect it before using a new create key. No task was submitted.`);
+    const intent = await this.native.resolvePermissionPreset(record.permissionPreset);
+    if (!isDeepStrictEqual(intent, record.permissionIntent)) throw new TeamError('PERMISSION_MISMATCH', 'The native permission preset definition changed; existing Teams are never upgraded on retry.');
+    const actual = await this.native.permissionSnapshot(record.sessionId);
+    verifyPermissions(intent, actual, record.permissions);
+    return actual;
+  }
+
   async dispatch(method, params = {}) {
     if (this.closing) throw new TeamError('SERVICE_CLOSING', 'Managed-Team admission is closed.');
     const operation = this.invoke(method, params);
@@ -64,7 +82,7 @@ export class ManagedTeams {
       case 'health': {
         object(params, []);
         const home = this.native.ctx.get?.('profileContext')?.home;
-        return { ok: true, api: { name: API_NAME, version: API_VERSION, capabilities: CAPABILITIES }, sourceSha: this.sourceSha, runtime: this.runtimeEvidence, roles: await this.native.catalog?.() ?? null, transport: 'native-typert-gateway', service: 'native-session', modalities: ['text'], ownsExecution: false, host: { pid: process.pid, instanceId: process.env.DSH_OWNED_INSTANCE_ID ?? null, home: home ? await realpath(home) : null } };
+        return { ok: true, api: { name: API_NAME, version: API_VERSION, capabilities: CAPABILITIES }, sourceSha: this.sourceSha, runtime: this.runtimeEvidence, roles: await this.native.catalog?.() ?? null, permissionPresets: await this.native.permissionCatalog?.() ?? null, transport: 'native-typert-gateway', service: 'native-session', modalities: ['text'], ownsExecution: false, host: { pid: process.pid, instanceId: process.env.DSH_OWNED_INSTANCE_ID ?? null, home: home ? await realpath(home) : null } };
       }
       case 'create': return this.create(params);
       case 'send': return this.send(params);
@@ -138,22 +156,24 @@ export class ManagedTeams {
   }
 
   async create(params) {
-    object(params, ['key', 'text', 'cwd', 'workspaceId', 'agentPreset', 'leadRole']);
+    object(params, ['key', 'text', 'cwd', 'workspaceId', 'agentPreset', 'leadRole', 'permissionPreset']);
     const key = text(params.key, 'key', 256);
     const prompt = text(params.text, 'text');
     const cwd = await this.workspace(params.cwd);
     const workspaceId = params.workspaceId === undefined ? undefined : text(params.workspaceId, 'workspaceId', 256);
     const agentPreset = params.agentPreset === undefined ? undefined : text(params.agentPreset, 'agentPreset', 256);
     const leadRole = params.leadRole === undefined ? undefined : text(params.leadRole, 'leadRole', 128);
+    const permissionPreset = params.permissionPreset === undefined ? undefined : text(params.permissionPreset, 'permissionPreset', 256);
     if (workspaceId !== undefined && await this.workspace(this.native.workspacePath(workspaceId)) !== cwd) {
       throw new TeamError('WORKSPACE_DENIED', 'The native workspace path differs from cwd.');
     }
-    const hash = digest({ prompt, cwd, workspaceId, agentPreset, leadRole });
+    const hash = digest({ prompt, cwd, workspaceId, agentPreset, leadRole, permissionPreset });
     return this.serial(`key:${key}`, async () => {
       let record = await this.store.get('key', key);
       if (record !== undefined && record.digest !== hash) throw new TeamError('CONTENT_CONFLICT', 'The create key is already bound to different content.');
       if (record === undefined) {
-        record = { sessionId: randomUUID(), inputId: `create-${digest(key)}`, digest: hash, cwd, stage: 'reserved', createdAt: Date.now() };
+        const permissionIntent = permissionPreset === undefined ? undefined : await this.native.resolvePermissionPreset(permissionPreset);
+        record = { sessionId: randomUUID(), inputId: `create-${digest(key)}`, digest: hash, cwd, stage: 'reserved', createdAt: Date.now(), ...(permissionPreset === undefined ? {} : { permissionPreset, permissionIntent }) };
         await this.store.set('key', key, record);
       }
       await this.store.set('team', record.sessionId, record);
@@ -164,10 +184,25 @@ export class ManagedTeams {
         const created = await this.native.create({ sessionId: record.sessionId, ...(workspaceId === undefined ? { cwd } : { workspaceId }), ...(agentPreset === undefined ? {} : { agentPreset }) });
         if (created.sessionId !== record.sessionId) throw new TeamError('SESSION_CONFLICT', 'Native create returned another Session; admission stopped.');
         await this.native.flush(record.sessionId);
+        if (permissionPreset !== undefined) {
+          try {
+            await this.native.applyPermissionPreset(record.sessionId, record.permissionIntent);
+            await this.native.flush(record.sessionId);
+            const permissions = await this.native.permissionSnapshot(record.sessionId);
+            verifyPermissions(record.permissionIntent, permissions);
+            record = { ...record, permissions };
+          } catch (error) {
+            if (error instanceof TeamError) throw error;
+            throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', `Permission initialization for Team ${record.sessionId} did not complete. No task was submitted; inspect the reserved Session before using a new key.`);
+          }
+        }
+      } else if (permissionPreset !== undefined) {
+        await this.permissions(record);
       }
       record = { ...record, stage: 'created' };
       await this.store.set('key', key, record);
       await this.store.set('team', record.sessionId, record);
+      const permissions = await this.permissions(record);
       let acceptance;
       try {
         acceptance = await this.send({ teamId: record.sessionId, inputId: record.inputId, text: prompt, mode: 'queue' });
@@ -176,7 +211,7 @@ export class ManagedTeams {
         const receipt = await this.store.get('input', [record.sessionId, record.inputId]);
         acceptance = { accepted: receipt === undefined ? false : null, processed: null, requiresContinuation: true };
       }
-      return { teamId: record.sessionId, sessionId: record.sessionId, inputId: record.inputId, ...acceptance };
+      return { teamId: record.sessionId, sessionId: record.sessionId, inputId: record.inputId, ...acceptance, permissions };
     });
   }
 
@@ -190,6 +225,8 @@ export class ManagedTeams {
     if (mode !== 'queue' && mode !== 'steer') throw new TeamError('INVALID_REQUEST', 'mode must be queue or steer.');
     if (params.continue !== undefined && typeof params.continue !== 'boolean') throw new TeamError('INVALID_REQUEST', 'continue must be a boolean.');
     return this.serial(`team:${params.teamId}`, async () => {
+      const admission = await this.record(params.teamId);
+      if (admission.permissionPreset !== undefined) await this.permissions(admission);
       const receiptKey = [params.teamId, inputId];
       const hash = digest({ prompt, mode });
       const receipt = await this.store.get('input', receiptKey);
