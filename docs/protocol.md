@@ -12,6 +12,7 @@ Authenticate through the process launch URL's `/connect` exchange with `interact
 | `status`, `result`, `stop` | `{ teamId }` |
 | `turnResult` (development capability) | `{ teamId, turn? or resultRef?, offset?, maxBytes? }` |
 | `input` (development capability) | `{ teamId, inputId }` |
+| `withdrawInput` (development capability) | `{ teamId, inputId, expectedMessageId }` |
 | `activity`, `prepareShutdown` | `{}` |
 
 Call `ctx.remote.roleTeams.create(request)` and inspect its native `{ ok, value }` or `{ ok: false, error }` result. Health advertises `api: { name: "dsh-team-roles", version: 1, capabilities }`, native runtime evidence, process identity and the public role catalog. API 1 is a business capability contract, not the removed IPC wire protocol. Errors use `team-roles/<CODE>`.
@@ -33,6 +34,14 @@ Optional API-1 capability `input-observations` is absent from published host 0.6
 `admission.state` is `acknowledged` only for a saved successful receipt; `unconfirmed` preserves uncertain outcomes, not a rejection. Independently, `native` reports one root projection cut (`asOfSeq`): `pending` includes exact native `messageId` and `next-turn`/`next-step` placement; `entered-turn` identifies the consuming turn/event; `turn-ended` retains its native outcome, including error or abortion. None proves the input was implemented or the goal achieved (`goalAccepted: null`). Multiple pending matches or simultaneous pending/entered evidence is `ambiguous`; samples are bounded with explicit counts.
 
 The bridge retains at most 4096 entered-input observations. `not-observed` and unavailable/migration/missing-session evidence do **not** prove absence, withdrawal or non-admission (`coverage.absenceIsConclusive: false`). Public projection read failures are sanitized. This is read-only evidence, not queue cancellation, supersession or a safe basis for automatically resending uncertain work. Retain the original IDs and investigate before any retry.
+
+## Live input withdrawal (development)
+
+Optional `live-input-withdrawal` is absent from published host 0.6.0. After inspecting `input` evidence, explicitly withdraw a known pending input using its exact native `expectedMessageId`. The existing live managed Lead must still own one uniquely matching pending message with text matching the saved intent. Cold, already claimed, ambiguous, replaced or changed-content state is refused without activation. Placement may have moved between next-turn and next-step. The public Inbox removal is synchronous after final identity/content checks; native Session events are flushed before the private acknowledgement.
+
+A durable withdrawal intent prevents create/send retries from resurrecting that input ID. A successful receipt says `state: withdrawn`, includes its native `asOfSeq`, and can be reread idempotently after disconnect/restart without activating work. It withdraws only that pending message: no running work is cancelled and no files are rolled back. Later new work needs a new, explicitly authorized input ID; this is not automatic supersession.
+
+Intent, native removal and private acknowledgement are not a single transaction. Races or flush/storage failures preserve `unconfirmed` and return `WITHDRAWAL_UNCERTAIN`; absence never manufactures success. An explicit same-ID retry can succeed only if the exact message is still pending. A confirmed past receipt is historical evidence, not a ban on unrelated native writers. Preserve the Home/IDs for investigation when uncertainty remains; do not resume cold execution, clear queues or resend to bypass it.
 
 ## Create-time permissions (0.6.0)
 

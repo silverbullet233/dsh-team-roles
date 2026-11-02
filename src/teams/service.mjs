@@ -89,6 +89,7 @@ export class ManagedTeams {
       case 'status': return this.status(params);
       case 'result': return this.result(params);
       case 'input': return this.input(params);
+      case 'withdrawInput': return this.withdrawInput(params);
       case 'turnResult':
         object(params, ['teamId', 'turn', 'resultRef', 'offset', 'maxBytes']);
         await this.record(params.teamId);
@@ -280,6 +281,7 @@ export class ManagedTeams {
       const hash = digest({ prompt, mode });
       const receipt = await this.store.get('input', receiptKey);
       if (receipt !== undefined && receipt.digest !== hash) throw new TeamError('CONTENT_CONFLICT', 'The input ID is already bound to different content.');
+      if (receipt?.withdrawal) throw new TeamError(receipt.withdrawal.state === 'withdrawn' ? 'INPUT_WITHDRAWN' : 'WITHDRAWAL_UNCERTAIN', 'This input has a withdrawal intent; it will not be resubmitted. Inspect its evidence and use a new input ID only for explicitly authorized new work.');
       if (receipt?.accepted === true) return { teamId: params.teamId, inputId, accepted: true, processed: null, duplicate: true };
       const snapshot = await this.native.snapshot(params.teamId);
       if (snapshot.needsContinuation && params.continue !== true) {
@@ -336,7 +338,32 @@ export class ManagedTeams {
     const inputId = text(params.inputId, 'inputId', 256);
     const receipt = await this.store.get('input', [params.teamId, inputId]);
     if (receipt === undefined) throw new TeamError('UNKNOWN_INPUT', 'This service has no admission intent for the requested Team/input ID.');
-    return { teamId: params.teamId, inputId, admission: { state: receipt.accepted === true ? 'acknowledged' : 'unconfirmed' },
+    return { teamId: params.teamId, inputId, admission: { state: receipt.accepted === true ? 'acknowledged' : 'unconfirmed' }, withdrawal: receipt.withdrawal ?? null,
       native: await this.native.inputState(params.teamId, inputId), goalAccepted: null };
+  }
+
+  async withdrawInput(params) {
+    object(params, ['teamId', 'inputId', 'expectedMessageId']);
+    await this.record(params.teamId);
+    const inputId = text(params.inputId, 'inputId', 256), messageId = text(params.expectedMessageId, 'expectedMessageId', 256);
+    return this.serial(`team:${params.teamId}`, async () => {
+      const key = [params.teamId, inputId], receipt = await this.store.get('input', key);
+      if (!receipt) throw new TeamError('UNKNOWN_INPUT', 'This service has no admission intent for the requested Team/input ID.');
+      if (receipt.withdrawal?.messageId !== undefined && receipt.withdrawal.messageId !== messageId) throw new TeamError('CONTENT_CONFLICT', 'A withdrawal is already bound to another native message ID.');
+      if (receipt.withdrawal?.state === 'withdrawn') return { teamId: params.teamId, inputId, ...receipt.withdrawal, duplicate: true, filesRolledBack: false };
+      try { this.native.checkInputWithdrawal(params.teamId, inputId, messageId, receipt.digest); }
+      catch (error) {
+        if (receipt.withdrawal) throw new TeamError('WITHDRAWAL_UNCERTAIN', 'A previous withdrawal remains unconfirmed; missing pending evidence does not prove success. No cold work was resumed.');
+        throw error;
+      }
+      const intent = { messageId, state: 'unconfirmed' };
+      try {
+        await this.store.set('input', key, { ...receipt, withdrawal: intent });
+        const cut = await this.native.withdrawInput(params.teamId, inputId, messageId, receipt.digest);
+        const withdrawal = { ...intent, state: 'withdrawn', asOfSeq: cut.asOfSeq };
+        await this.store.set('input', key, { ...receipt, withdrawal });
+        return { teamId: params.teamId, inputId, ...withdrawal, duplicate: false, filesRolledBack: false };
+      } catch { throw new TeamError('WITHDRAWAL_UNCERTAIN', 'Withdrawal may have occurred but its durable receipt is unconfirmed. Retain the exact IDs and inspect evidence; do not resend or infer success from absence.'); }
+    });
   }
 }
