@@ -11,6 +11,7 @@ Authenticate through the process launch URL's `/connect` exchange with `interact
 | `send` | `{ teamId, inputId, text, mode?: "queue" or "steer", continue?: boolean }` |
 | `status`, `result`, `stop` | `{ teamId }` |
 | `turnResult` (development capability) | `{ teamId, turn? or resultRef?, offset?, maxBytes? }` |
+| `input` (development capability) | `{ teamId, inputId }` |
 | `activity`, `prepareShutdown` | `{}` |
 
 Call `ctx.remote.roleTeams.create(request)` and inspect its native `{ ok, value }` or `{ ok: false, error }` result. Health advertises `api: { name: "dsh-team-roles", version: 1, capabilities }`, native runtime evidence, process identity and the public role catalog. API 1 is a business capability contract, not the removed IPC wire protocol. Errors use `team-roles/<CODE>`.
@@ -24,6 +25,14 @@ In **Settings → Team roles → Create a role-managed Team**, enter an allowed 
 External clients use a durable caller `key`, reused only for identical content. A reservation stores the root Session ID before native creation and flushes before acknowledging input. Native `session.create` alone is not the idempotency contract. Send uses an `inputId` and native prompt request-ID deduplication. Retain IDs after uncertain outcomes; inspect status before retrying. Cold or interrupted work requires explicit `continue: true`. A cold create retry can return reserved IDs with `requiresContinuation: true` and false or unknown acceptance.
 
 Acceptance means admitted input, not processing or completion. Result reports native turn and Team evidence separately. Lead completion does not imply child completion. Unloaded selections and unknown usage/fees remain null. Text input only; native workspace, tool and approval policies still apply. A passive API client cannot answer approvals.
+
+## Input evidence (development)
+
+Optional API-1 capability `input-observations` is absent from published host 0.6.0. `input` reads a known create/send `inputId` on its managed root without activating cold execution. Unknown roots and unknown admission intents are rejected before reading native state. No prompt content or stored digest is returned.
+
+`admission.state` is `acknowledged` only for a saved successful receipt; `unconfirmed` preserves uncertain outcomes, not a rejection. Independently, `native` reports one root projection cut (`asOfSeq`): `pending` includes exact native `messageId` and `next-turn`/`next-step` placement; `entered-turn` identifies the consuming turn/event; `turn-ended` retains its native outcome, including error or abortion. None proves the input was implemented or the goal achieved (`goalAccepted: null`). Multiple pending matches or simultaneous pending/entered evidence is `ambiguous`; samples are bounded with explicit counts.
+
+The bridge retains at most 4096 entered-input observations. `not-observed` and unavailable/migration/missing-session evidence do **not** prove absence, withdrawal or non-admission (`coverage.absenceIsConclusive: false`). Public projection read failures are sanitized. This is read-only evidence, not queue cancellation, supersession or a safe basis for automatically resending uncertain work. Retain the original IDs and investigate before any retry.
 
 ## Create-time permissions (0.6.0)
 
