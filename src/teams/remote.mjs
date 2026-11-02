@@ -11,6 +11,7 @@ const requests = {
   status: team, result: team, stop: team,
   input: z.strictObject({ teamId: id, inputId: id }),
   withdrawInput: z.strictObject({ teamId: id, inputId: id, expectedMessageId: id }),
+  jobs: z.strictObject({ teamId: id, limit: z.number().int().min(1).max(25).optional() }),
   turnResult: z.strictObject({ teamId: id, turn: z.number().int().positive().optional(), resultRef: z.string().min(1).max(2048).optional(), offset: z.number().int().nonnegative().optional(), maxBytes: z.number().int().min(4).max(32768).optional() }),
 };
 const codec = schema => ({ mode: 'strict', typeSymbol: 'dsh-team-roles#ManagedTeamValue', create: () => schema, jsonSchema: z.toJSONSchema(schema) });

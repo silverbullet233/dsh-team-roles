@@ -13,6 +13,8 @@ Authenticate through the process launch URL's `/connect` exchange with `interact
 | `turnResult` (development capability) | `{ teamId, turn? or resultRef?, offset?, maxBytes? }` |
 | `input` (development capability) | `{ teamId, inputId }` |
 | `withdrawInput` (development capability) | `{ teamId, inputId, expectedMessageId }` |
+
+| `jobs` (development capability) | `{ teamId, limit? }` |
 | `activity`, `prepareShutdown` | `{}` |
 
 Call `ctx.remote.roleTeams.create(request)` and inspect its native `{ ok, value }` or `{ ok: false, error }` result. Health advertises `api: { name: "dsh-team-roles", version: 1, capabilities }`, native runtime evidence, process identity and the public role catalog. API 1 is a business capability contract, not the removed IPC wire protocol. Errors use `team-roles/<CODE>`.
@@ -42,6 +44,14 @@ Optional `live-input-withdrawal` is absent from published host 0.6.0. After insp
 A durable withdrawal intent prevents create/send retries from resurrecting that input ID. A successful receipt says `state: withdrawn`, includes its native `asOfSeq`, and can be reread idempotently after disconnect/restart without activating work. It withdraws only that pending message: no running work is cancelled and no files are rolled back. Later new work needs a new, explicitly authorized input ID; this is not automatic supersession.
 
 Intent, native removal and private acknowledgement are not a single transaction. Races or flush/storage failures preserve `unconfirmed` and return `WITHDRAWAL_UNCERTAIN`; absence never manufactures success. An explicit same-ID retry can succeed only if the exact message is still pending. A confirmed past receipt is historical evidence, not a ban on unrelated native writers. Preserve the Home/IDs for investigation when uncertainty remains; do not resume cold execution, clear queues or resend to bypass it.
+
+## Owned Job observations (development)
+
+Optional `owned-job-observations` is absent from published host 0.6.0. `jobs` passively reads the root's public native Team roster, then metadata from the live Job registry for exactly those declared Session owners. Native caller visibility also includes unowned Jobs; this API deliberately excludes them and unrelated owners. Member IDs and arbitrary owners are not query targets. No Job output cursor is consumed, no spill file is read, and no execution or cancellation is exposed.
+
+The response counts every observed owned Job by native status and samples up to `limit` entries (default 20, maximum 25), prioritizing running/stopping work. `omitted` is explicit. IDs stay whole, producer `kind` is omitted if oversized, and optional progress previews are limited to 160 UTF-8 bytes without cutting valid Unicode scalars. Command labels, terminal details, output payloads and spill paths are excluded; output metadata contains byte positions only. Missing progress/metadata stays null.
+
+`rootAsOfSeq` identifies the roster's root cut; `ownerScopeUnchangedAtCheck` reports a follow-up Agent/Session identity and root-sequence check, or null when no live sequence is available. `coverage.atomic: false` does not claim a simultaneous Team/Job snapshot. Unavailable/malformed scope or registry observations return `available: false` and null counts rather than an empty-success assertion. The registry is process-local and drops records; cold reads do not activate work, and an empty result is neither historical completeness nor a stop, resource-release or goal-success verdict. Use normal Lead coordination for execution decisions. Installation pins remain unchanged until a compatible release is published.
 
 ## Create-time permissions (0.6.0)
 

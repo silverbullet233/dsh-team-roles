@@ -90,6 +90,10 @@ export class ManagedTeams {
       case 'result': return this.result(params);
       case 'input': return this.input(params);
       case 'withdrawInput': return this.withdrawInput(params);
+      case 'jobs':
+        object(params, ['teamId', 'limit']);
+        await this.record(params.teamId);
+        return { teamId: params.teamId, ...await this.native.jobs(params.teamId, params.limit) };
       case 'turnResult':
         object(params, ['teamId', 'turn', 'resultRef', 'offset', 'maxBytes']);
         await this.record(params.teamId);
