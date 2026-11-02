@@ -6,6 +6,7 @@ import { isAbsolute, relative, sep } from 'node:path';
 import { TeamError, object, text } from './errors.mjs';
 import { digest } from './private-store.mjs';
 import { isDeepStrictEqual } from 'node:util';
+import { executionEvidence } from './execution-evidence.mjs';
 
 function verifyPermissions(intent, actual, saved) {
   if (!actual || actual.preset !== intent.preset || actual.sandbox?.mode !== intent.sandboxMode || actual.approvalPolicy !== intent.approvalPolicy
@@ -313,13 +314,16 @@ export class ManagedTeams {
 
   async result(params) {
     const status = await this.status(params);
+    const execution = executionEvidence(status, await this.native.jobs?.(params.teamId, 1));
     return {
       teamId: params.teamId,
       taskState: status.taskState,
       runtimeState: status.runtimeState,
       rootTurnState: status.rootTurnState,
       rootTurnCompleted: status.rootTurnCompleted,
-      completed: status.teamCompleted ?? null,
+      completed: execution.completed,
+      nativeTeamCompleted: execution.nativeTeamCompleted,
+      execution,
       teamActivity: status.teamActivity,
       output: status.observation.output,
       outputSource: status.observation.outputSource ?? null,

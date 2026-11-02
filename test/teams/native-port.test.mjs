@@ -77,13 +77,14 @@ test('Lead completion does not claim Team completion while a child runs, provisi
   assert.equal(status.teamActivity.members.find(member => member.id === 'child').runtimeState, 'unloaded');
 });
 
-test('stop interrupts native children through Team authority and cancels lead through Session API', async () => {
+test('stop interrupts through native authority but cannot certify an unavailable Job domain', async () => {
   const { port, agents, calls } = fixture();
   agents.set('root', { id: 'root', status: 'running', model: { current: () => undefined } });
   agents.set('child', { id: 'child', status: 'running' });
   const result = await port.stop('root');
-  assert.equal(result.accepted, true);
-  assert.equal(result.quiescent, true);
+  assert.equal(result.accepted, false);
+  assert.equal(result.quiescent, false);
+  assert.equal(result.execution.jobs.available, false);
   assert.deepEqual(calls.filter(call => call[0] === 'cancel'), [['cancel', { sessionId: 'root' }]]);
   assert.deepEqual(calls.filter(call => call[0] === 'interrupt'), [['interrupt', 'root', 'worker']]);
   assert.equal(result.filesRolledBack, false);

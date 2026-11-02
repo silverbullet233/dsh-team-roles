@@ -6,6 +6,7 @@ import { readTurnResult } from './turn-result.mjs';
 import { observeInput, unavailableInput } from './input-observation.mjs';
 import { digest } from './private-store.mjs';
 import { observeOwnedJobs } from './job-observation.mjs';
+import { executionEvidence } from './execution-evidence.mjs';
 
 export class NativeSessionPort {
   constructor(ctx, roles) {
@@ -241,15 +242,47 @@ export class NativeSessionPort {
     };
   }
 
-  /** Interrupt children before Lead; their result delivery can wake the Lead. */
+  /** Native owner authority only; cold/replaced owner runtimes are never resumed. */
+  cancelOwnedJobs(sessionId, snapshot, root, outcomes) {
+    let available = snapshot.consistent === true;
+    try {
+      const registry = typeof this.ctx.get === 'function' ? this.ctx.get('jobs') : this.ctx.jobs;
+      if (!registry) return false;
+      const owners = new Set([sessionId, ...(snapshot.team?.members ?? []).map(member => member.id)]);
+      const identities = new Map([...owners].map(id => { const agent = this.ctx.agents.get(id); return [id, { agent, session: agent?.session }]; }));
+      for (const owner of owners) for (const job of registry.list(owner)) {
+        if (job.owner !== owner) continue; // list(caller) also exposes unowned Jobs.
+        if (typeof job.id !== 'string' || !job.id.length || Buffer.byteLength(job.id) > 256 || !['running', 'stopping', 'completed', 'killed', 'failed'].includes(job.status)) { available = false; continue; }
+        if (!['running', 'stopping'].includes(job.status) || outcomes.has(job.id)) continue;
+        const identity = identities.get(owner), agent = this.ctx.agents.get(owner);
+        const rootValid = root.agent && this.ctx.agents.get(sessionId) === root.agent && root.agent.session === root.session
+          && this.ctx.sessions.get(sessionId) === root.session && root.session.header.id === sessionId && !root.session.header.parentSession;
+        const ownerValid = rootValid && agent && agent === identity.agent && agent.session === identity.session && this.ctx.sessions.get(owner) === identity.session
+          && identity.session.header.id === owner && (owner === sessionId || (identity.session.header.parentSession === sessionId && this.ctx.agentTeams.listMembers(root.agent).some(member => member.id === owner)));
+        if (!available || !rootValid || !ownerValid) { outcomes.set(job.id, { id: job.id, owner, cancellation: 'failed', code: 'OWNER_OR_SCOPE_UNAVAILABLE' }); continue; }
+        try {
+          const cancellation = registry.kill(job.id, owner, 'Managed Team stop requested.');
+          outcomes.set(job.id, { id: job.id, owner, cancellation: ['requested', 'already-finished'].includes(cancellation) ? cancellation : 'failed' });
+        }
+        catch { outcomes.set(job.id, { id: job.id, owner, cancellation: 'failed', code: 'NATIVE_JOB_CANCEL_FAILED' }); }
+      }
+    } catch { available = false; }
+    return available;
+  }
+
+  /** Interrupt owned Jobs and children before Lead; delivery can wake the Lead. */
   async stop(sessionId) {
     this.roles?.stopping?.add(sessionId);
     const outcomes = new Map();
+    const jobOutcomes = new Map();
+    let jobsAvailable = false, execution = null;
     let quiescent = false;
     const deadline = Date.now() + 5000;
     try {
       for (let pass = 0; pass < 6 && Date.now() < deadline; pass++) {
+        const rootAgent = this.ctx.agents.get(sessionId), root = { agent: rootAgent, session: rootAgent?.session };
         const snapshot = await this.snapshot(sessionId);
+        jobsAvailable = this.cancelOwnedJobs(sessionId, snapshot, root, jobOutcomes);
         const roster = snapshot.team?.members ?? [];
         const ids = [...new Set([...roster.filter(member => member.id !== sessionId).map(member => member.id), sessionId])];
         for (const id of ids) {
@@ -275,11 +308,17 @@ export class NativeSessionPort {
         // Allow native child-delivery microtasks to settle, then inspect afresh.
         await new Promise(resolve => setTimeout(resolve, 10));
         const after = await this.snapshot(sessionId);
-        const stillActive = this.roles?.tails?.has(sessionId) || after.runtimeState === 'running' || after.teamActivity.members.some(member => member.runtimeState === 'running' || member.nativeStatus === 'running' || member.phase === 'provisioning');
-        if (!stillActive && pass > 0) { quiescent = true; break; }
+        execution = executionEvidence(after, await this.jobs(sessionId, 1));
+        const stillActive = after.consistent !== true || this.roles?.tails?.has(sessionId) || after.runtimeState === 'running'
+          || after.teamActivity.members.some(member => member.runtimeState === 'running' || member.nativeStatus === 'running' || member.phase === 'provisioning'
+            || member.observationAvailable !== true || member.openTurn || member.pendingInputs !== 0);
+        if (!stillActive && execution.ownedJobsSettled === true && pass > 0) { quiescent = true; break; }
       }
-      return { teamId: sessionId, accepted: [...outcomes.values()].every(item => item.cancellation !== 'failed'), quiescent,
-        outcomes: [...outcomes.values()], filesRolledBack: false, pendingInputsRetained: true };
+      const jobs = [...jobOutcomes.values()];
+      return { teamId: sessionId, accepted: jobsAvailable && [...outcomes.values(), ...jobs].every(item => item.cancellation !== 'failed'), quiescent,
+        outcomes: [...outcomes.values()], execution,
+        jobCancellations: { observed: jobs.length, failed: jobs.filter(job => job.cancellation === 'failed').length, items: jobs.slice(0, 25), omitted: Math.max(0, jobs.length - 25) },
+        filesRolledBack: false, pendingInputsRetained: true };
     } finally { this.roles?.stopping?.delete(sessionId); }
   }
 
