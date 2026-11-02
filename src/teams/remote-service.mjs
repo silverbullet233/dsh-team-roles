@@ -18,6 +18,7 @@ export class RoleTeamsRemote extends TypertRemoteService {
   send(request) { return this.invoke('send', request); }
   status(request) { return this.invoke('status', request); }
   result(request) { return this.invoke('result', request); }
+  turnResult(request) { return this.invoke('turnResult', request); }
   stop(request) { return this.invoke('stop', request); }
   prepareShutdown(request) { return this.invoke('prepareShutdown', request); }
   activity(request) { return this.invoke('activity', request); }

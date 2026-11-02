@@ -88,6 +88,10 @@ export class ManagedTeams {
       case 'send': return this.send(params);
       case 'status': return this.status(params);
       case 'result': return this.result(params);
+      case 'turnResult':
+        object(params, ['teamId', 'turn', 'resultRef', 'offset', 'maxBytes']);
+        await this.record(params.teamId);
+        return this.native.turnResult(params);
       case 'stop':
         object(params, ['teamId']);
         await this.record(params.teamId);

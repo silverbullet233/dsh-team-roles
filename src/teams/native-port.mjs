@@ -2,6 +2,7 @@
 import { TeamError } from './errors.mjs';
 import { Session } from '@deepseek-ai/dsh-session';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
+import { readTurnResult } from './turn-result.mjs';
 
 export class NativeSessionPort {
   constructor(ctx, roles) {
@@ -105,6 +106,12 @@ export class NativeSessionPort {
     } finally { binding[Symbol.dispose](); }
   }
   projections(sessionId) { return this.call('projections', { sessionId }); }
+  async turnResult(params) {
+    const baseline = await this.projections(params.teamId);
+    if (baseline === null) throw new TeamError('SESSION_MISSING', 'The native Session is absent.');
+    if (baseline.kind !== 'sequenced') throw new TeamError('MIGRATION_REQUIRED', 'Native history requires an explicit supported migration.');
+    return readTurnResult(params, request => this.call('events', request));
+  }
   cancel(sessionId) { return this.call('cancel', { sessionId }); }
 
   async flush(sessionId) {

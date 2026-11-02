@@ -13,12 +13,12 @@ export function requireCapabilities({ agent, controller, team, projections, boot
     ['agent.model.select', agent.AgentModel?.prototype?.select], ['agent.model.current', agent.AgentModel?.prototype?.current],
     ['durable model selection', agent.modelSelectionProjectionDefinition?.apply], ['Session projections', projections.SessionProjectionRegistry?.prototype?.register],
     ['native Team spawn', team.TeamService?.prototype?.spawnTeammate], ['native Team messaging', team.TeamService?.prototype?.sendMessage],
-    ...['create','prompt','projections','cancel'].map(name => [`SessionController.${name}`,controller.SessionController?.prototype?.[name]]),
+    ...['create','prompt','projections','cancel','events'].map(name => [`SessionController.${name}`,controller.SessionController?.prototype?.[name]]),
     ['native profile resolver',boot.createRuntimeResolution],
   ];
   for (const [name, value] of required) if (typeof value !== 'function') throw new Error(`Required ${name} API is missing`);
   if (!reflection.TYPERT?.invocations) throw new Error('Required SessionController reflection is missing');
-  for (const method of ['create','prompt','projections','cancel']) if (!reflection.TYPERT.invocations.some(row=>row.namespace==='session'&&row.method===method)) throw new Error(`Required session/${method} reflection is missing`);
+  for (const method of ['create','prompt','projections','cancel','events']) if (!reflection.TYPERT.invocations.some(row=>row.namespace==='session'&&row.method===method)) throw new Error(`Required session/${method} reflection is missing`);
 }
 export async function verifyRuntime({ context } = {}) {
   try {

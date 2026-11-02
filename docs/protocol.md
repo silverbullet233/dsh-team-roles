@@ -10,6 +10,7 @@ Authenticate through the process launch URL's `/connect` exchange with `interact
 | `create` | `{ key, cwd, text, workspaceId?, agentPreset?, leadRole?, permissionPreset? }` |
 | `send` | `{ teamId, inputId, text, mode?: "queue" or "steer", continue?: boolean }` |
 | `status`, `result`, `stop` | `{ teamId }` |
+| `turnResult` (development capability) | `{ teamId, turn? or resultRef?, offset?, maxBytes? }` |
 | `activity`, `prepareShutdown` | `{}` |
 
 Call `ctx.remote.roleTeams.create(request)` and inspect its native `{ ok, value }` or `{ ok: false, error }` result. Health advertises `api: { name: "dsh-team-roles", version: 1, capabilities }`, native runtime evidence, process identity and the public role catalog. API 1 is a business capability contract, not the removed IPC wire protocol. Errors use `team-roles/<CODE>`.
@@ -31,6 +32,16 @@ Version 0.6.0 adds API-1 capability `create-permission-preset`; it is absent fro
 The host applies the native preset only to a fresh blank root, flushes and verifies it before submitting the first task or allowing member creation. Create returns effective `permissions: { preset, sandbox, approvalPolicy, asOfSeq }`, or null if native permission services are unavailable and no preset was requested. Intent is part of the create digest. Guarded text admission uses public SessionController/Agent APIs and checks live permissions synchronously immediately before the native queue write, after asynchronous attachment and receipt work. This is a point-in-time admission check, not a ban on later owner permission changes. Identical retries and restored Sessions verify read-only; changed content, effective permissions, catalog definitions or partial initialization fail closed, including sends. An incomplete reservation is not automatically repaired: inspect its ID before creating another Team.
 
 The usual `danger-full-access` bundle is sandbox full access with approval `never`; configuration may redefine it. `never` denies still-required approval, not approve-all. New children snapshot parent sandbox and pin approval to `never`; later Lead changes do not update existing children. Workspace admission is not complete process confinement and presets grant no OS privileges. Existing Teams, global defaults and separate explicit approval decisions are unchanged.
+
+## Historical ended-turn text (development)
+
+API-1 capability `ended-turn-results` is additive development work, absent from the published 0.6.0 host. Keep released installation pins unchanged until a compatible host is published. Legacy `result` is unchanged.
+
+Select an explicit positive `turn`, then retain its `resultRef`. Read further pages with that same reference and `page.nextOffset`, omitting `turn`. References pin the managed Lead identity, native start/end sequence, source/content SHA-256 and rendering format; append-only later turns do not change them. Reconnect and cold reads use public native `session.events` without activation. References are untrusted selectors, not credentials; only roots created by this service are readable. Changed or cross-Team references fail explicitly.
+
+`format: assistant-text-events-v1` describes UTF-8 JSONL, one committed `assistant/message` event per line: `{seq, surfaceOp, sourceEventSeqs?, text:[...]}`. Join page text before parsing lines; individual pages may split JSON tokens, but never UTF-8 scalars. Replacement markers are retained rather than silently concatenating obsolete/replacement messages as a final answer. This audit event log is **not** the canonical Web conversation projection. Empty text arrays are valid for tool-only assistant messages. Reasoning, tool payloads, artifacts and member Sessions are excluded. `outcome` is the native terminal reason, `inputIds` names consumed user RPC inputs, and `coverage.goalAccepted` stays null; none proves task or business success.
+
+Default page text is 8192 bytes, configurable from 4 to 32768; `page.sha256` and `totalBytes` describe the entire JSONL transcript. Nonzero offsets require a reference and an in-range UTF-8 scalar boundary. Native page/turn scanning is limited to 64 pages, 20000 events and 8 MiB of fetched wire records/rendered text, with at most 128 bounded input IDs. These are application limits after native reads, not a native storage-I/O byte guarantee. `HISTORY_LIMIT`, `HISTORY_INCOMPLETE`, `HISTORY_UNAVAILABLE`, `MIGRATION_REQUIRED`, `TURN_NOT_FOUND`, `TURN_NOT_ENDED` and `RESULT_CHANGED` return no partial/latest substitute.
 
 ## Stop and host lifetime
 
