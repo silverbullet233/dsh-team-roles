@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NativeSessionPort } from '../../src/teams/native-port.mjs';
 import { initialObservation } from '../../src/teams/projection.mjs';
+import { initialTools } from '../../src/teams/tool-observation.mjs';
 
 function fixture() {
   const calls = [];
@@ -27,6 +28,19 @@ function fixture() {
   };
   return { ctx, port: new NativeSessionPort(ctx, roles), calls, agents, children, observation, projection };
 }
+
+test('tool receipts use bounded declared-roster samples and preserve missing projections as unavailable', async () => {
+  const { port, projection } = fixture();
+  projection.values.agentTeam.members = [{ id: 'root', role: 'lead' }, ...Array.from({ length: 40 }, (_, i) => ({ id: `child-${i}`, role: 'teammate' }))];
+  projection.values.dshToolReceipts = { ...initialTools(), turn: 1, open: true };
+  const state = await port.snapshot('root');
+  assert.equal(state.toolActivity.sessions.length, 32); assert.equal(state.toolActivity.omittedSessions, 9);
+  assert.equal(state.toolActivity.atomic, false);
+  assert.equal(state.toolActivity.sessions[0].sessionId, 'root'); assert.equal(state.toolActivity.sessions[0].asOfSeq, 1);
+  assert.equal(state.toolActivity.sessions[0].unsettledCount, 0);
+  assert.equal(state.toolActivity.sessions[1].available, false); assert.equal(state.toolActivity.sessions[1].asOfSeq, null);
+  assert.equal(state.toolActivity.sessions[1].unsettledCount, undefined);
+});
 
 test('healthy active native turn accepts queue/steer without explicit continuation', async () => {
   const { port, agents, observation } = fixture();

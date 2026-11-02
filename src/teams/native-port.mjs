@@ -7,6 +7,7 @@ import { observeInput, unavailableInput } from './input-observation.mjs';
 import { digest } from './private-store.mjs';
 import { observeOwnedJobs } from './job-observation.mjs';
 import { executionEvidence } from './execution-evidence.mjs';
+import { toolReceiptView } from './tool-observation.mjs';
 
 const runtimeIdentity = (ctx, id, agent = ctx.agents.get(id)) => ({ agent, session: agent?.session, registeredSession: ctx.sessions.get(id) });
 const sameRuntime = (ctx, id, observed) => observed !== undefined && ctx.agents.get(id) === observed.agent
@@ -176,6 +177,7 @@ export class NativeSessionPort {
     const liveRoster = agent === undefined ? null : this.ctx.agentTeams.listMembers(agent);
     const members = [];
     const cuts = new Map([[sessionId, projections.asOfSeq]]);
+    const toolSamples = new Map([[sessionId, projections.values.dshToolReceipts]]);
     for (const member of team?.members ?? []) {
       const native = liveRoster?.find(row => row.id === member.id);
       const live = this.ctx.agents.get(member.id);
@@ -183,6 +185,7 @@ export class NativeSessionPort {
       let current = member.id === sessionId ? projections : null;
       if (member.id !== sessionId) current = await this.projections(member.id);
       if (current?.kind === 'sequenced') cuts.set(member.id, current.asOfSeq);
+      if (!toolSamples.has(member.id) && toolSamples.size < 32) toolSamples.set(member.id, current?.kind === 'sequenced' ? current.values.dshToolReceipts : undefined);
       const pending = current?.kind === 'sequenced' ? current.values.inbox : null;
       members.push({
         id: member.id, name: member.name, role: member.role, phase: member.phase,
@@ -231,6 +234,12 @@ export class NativeSessionPort {
       rootTurnCompleted,
       teamCompleted,
       teamActivity: { state: activityState, pendingTasks, members },
+      toolActivity: { format: 'native-tool-receipts-v1', scope: 'managed-root-and-declared-roster', atomic: false, historyScope: 'latest-started-turn',
+        omittedSessions: new Set([sessionId, ...members.map(m => m.id)]).size - toolSamples.size,
+        sessions: [...toolSamples].map(([id, state]) => {
+          const cut = cuts.get(id) ?? null, live = this.ctx.sessions.get(id);
+          return { sessionId: id, asOfSeq: cut, unchangedAtCheck: cut === null || typeof live?.seq !== 'number' ? null : live.seq - 1 === cut && sameRuntime(this.ctx, id, identities.get(id)), ...toolReceiptView(state) };
+        }) },
       needsContinuation: agent === undefined || (agent.status !== 'running' && (observation.open || ['interrupted', 'aborted'].includes(observation.lastEnd?.reason))),
       observation,
       team,
