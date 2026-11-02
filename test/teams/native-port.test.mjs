@@ -91,6 +91,53 @@ test('stop interrupts native children through Team authority and cancels lead th
   assert.deepEqual(calls[0], ['peer', { principal: { kind: 'owner' }, interactions: 'none' }]);
 });
 
+test('freshness exposes per-Session cuts, unknown cold checks and changed member samples', async () => {
+  const { port, ctx, agents, children, observation } = fixture();
+  observation.lastEnd = { turn: 1, reason: 'completed' };
+  agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } });
+  agents.set('child', { id: 'child', status: 'idle' });
+  children.set('child', { kind: 'sequenced', asOfSeq: 7, values: { dshBridge: { ...initialObservation(), lastEnd: { turn: 1, reason: 'completed' } }, inbox: { 'next-turn': [], 'next-step': [] } } });
+  const seq = { root: 2, child: 8 }; ctx.sessions.get = id => ({ seq: seq[id] });
+  let status = await port.snapshot('root');
+  assert.equal(status.asOfSeq, 1); assert.equal(status.asOfSeqScope, 'root-session');
+  assert.deepEqual(status.freshness, { atomic: false, projections: [{ sessionId: 'root', asOfSeq: 1, unchangedAtCheck: true }, { sessionId: 'child', asOfSeq: 7, unchangedAtCheck: true }] });
+  port.roles.bindings = async () => { seq.child = 9; return []; };
+  status = await port.snapshot('root');
+  assert.equal(status.consistent, false); assert.equal(status.freshness.projections[1].unchangedAtCheck, false);
+  port.roles.bindings = async () => []; children.delete('child'); agents.delete('child');
+  status = await port.snapshot('root');
+  assert.equal(status.freshness.projections[1].asOfSeq, null); assert.equal(status.freshness.projections[1].unchangedAtCheck, null);
+});
+
+test('member runtime replacement cannot reuse the same sequence as unchanged evidence', async () => {
+  const { port, ctx, agents, children } = fixture();
+  agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } }); agents.set('child', { id: 'child', status: 'idle' });
+  children.set('child', { kind: 'sequenced', asOfSeq: 1, values: { dshBridge: initialObservation(), inbox: { 'next-turn': [], 'next-step': [] } } });
+  ctx.sessions.get = () => ({ seq: 2 });
+  port.roles.bindings = async () => { agents.set('child', { id: 'child', status: 'idle' }); return []; };
+  const status = await port.snapshot('root');
+  assert.equal(status.consistent, false); assert.equal(status.freshness.projections[1].unchangedAtCheck, false);
+});
+
+test('root replacement during its first projection read cannot become unchanged evidence', async () => {
+  const { port, ctx, agents, observation } = fixture();
+  observation.lastEnd = { turn: 1, reason: 'completed' };
+  agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } });
+  ctx.sessions.get = () => ({ seq: 2 });
+  const invoke = ctx.typertGateway.invoke;
+  let replaced = false;
+  ctx.typertGateway.invoke = request => {
+    const value = invoke(request);
+    if (request.method === 'projections' && request.args.request.sessionId === 'root' && !replaced) {
+      replaced = true; agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } });
+    }
+    return value;
+  };
+  const status = await port.snapshot('root');
+  assert.equal(status.consistent, false); assert.equal(status.rootTurnCompleted, false);
+  assert.equal(status.freshness.projections[0].asOfSeq, 1); assert.equal(status.freshness.projections[0].unchangedAtCheck, false);
+});
+
 test('native inactive unloaded children with durable completion and empty inbox allow Team completion without activation', async () => {
   const { port, agents, children, observation, calls } = fixture();
   observation.lastEnd = { turn: 1, reason: 'completed' };

@@ -120,6 +120,7 @@ export class NativeSessionPort {
   }
 
   async snapshot(sessionId) {
+    const rootIdentity = this.ctx.agents.get(sessionId);
     const projections = await this.projections(sessionId);
     if (projections === null) throw new TeamError('SESSION_MISSING', 'The native Session is absent; no replacement was created.');
     if (projections.kind !== 'sequenced') throw new TeamError('MIGRATION_REQUIRED', 'The native Session requires an explicit supported migration.');
@@ -133,9 +134,11 @@ export class NativeSessionPort {
     const liveRoster = agent === undefined ? null : this.ctx.agentTeams.listMembers(agent);
     const members = [];
     const cuts = new Map([[sessionId, projections.asOfSeq]]);
+    const identities = new Map([[sessionId, rootIdentity]]);
     for (const member of team?.members ?? []) {
       const native = liveRoster?.find(row => row.id === member.id);
       const live = this.ctx.agents.get(member.id);
+      if (member.id !== sessionId) identities.set(member.id, live);
       let current = member.id === sessionId ? projections : null;
       if (member.id !== sessionId) current = await this.projections(member.id);
       if (current?.kind === 'sequenced') cuts.set(member.id, current.asOfSeq);
@@ -153,7 +156,7 @@ export class NativeSessionPort {
     const bindings = this.roles ? await this.roles.bindings(sessionId) : [];
     const rootNow = this.ctx.agents.get(sessionId);
     const rosterNow = rootNow === undefined ? null : this.ctx.agentTeams.listMembers(rootNow);
-    const changed = rootNow !== agent || [...cuts].some(([id, cut]) => {
+    const changed = rootNow !== agent || [...identities].some(([id, observed]) => this.ctx.agents.get(id) !== observed) || [...cuts].some(([id, cut]) => {
       const live = this.ctx.sessions.get(id);
       return typeof live?.seq === 'number' && live.seq - 1 !== cut;
     });
@@ -175,6 +178,11 @@ export class NativeSessionPort {
     return {
       sessionId,
       asOfSeq: projections.asOfSeq,
+      asOfSeqScope: 'root-session',
+      freshness: { atomic: false, projections: [...identities.keys()].map(id => {
+        const cut = cuts.get(id) ?? null, live = this.ctx.sessions.get(id);
+        return { sessionId: id, asOfSeq: cut, unchangedAtCheck: cut === null || typeof live?.seq !== 'number' ? null : live.seq - 1 === cut && this.ctx.agents.get(id) === identities.get(id) };
+      }) },
       runtimeState: rootNow === undefined ? 'unloaded' : rootNow.status,
       taskState: activityState === 'quiescent' ? rootTurnState : activityState,
       rootTurnState: changed ? (rootNow?.status === 'running' ? 'running' : 'unknown') : rootTurnState,

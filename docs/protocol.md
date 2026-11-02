@@ -43,6 +43,14 @@ Select an explicit positive `turn`, then retain its `resultRef`. Read further pa
 
 Default page text is 8192 bytes, configurable from 4 to 32768; `page.sha256` and `totalBytes` describe the entire JSONL transcript. Nonzero offsets require a reference and an in-range UTF-8 scalar boundary. Native page/turn scanning is limited to 64 pages, 20000 events and 8 MiB of fetched wire records/rendered text, with at most 128 bounded input IDs. These are application limits after native reads, not a native storage-I/O byte guarantee. `HISTORY_LIMIT`, `HISTORY_INCOMPLETE`, `HISTORY_UNAVAILABLE`, `MIGRATION_REQUIRED`, `TURN_NOT_FOUND`, `TURN_NOT_ENDED` and `RESULT_CHANGED` return no partial/latest substitute.
 
+## Result attribution and freshness (development)
+
+Optional capability `result-attribution` is development work absent from published host 0.6.0. Status observation/result metadata separates the latest started turn, active turn, last native-ended turn and last native-completed turn. Native completion is not goal acceptance. `outputSource: {turn, seq, truncated}` identifies the current turn's latest nonempty text preview; starting another turn clears it. A subsequent tool-only assistant message preserves text from the same turn and updates `latestAssistant: {turn, seq, hasText}` separately. No-text assistant activity is visible even when output is empty; it is not proof that a tool executed. The legacy preview remains limited to 8192 UTF-16 units, avoids cutting valid surrogate pairs and explicitly reports truncation. Use the historical read reference for complete event text.
+
+`asOfSeqScope: root-session` labels the legacy root cursor. `freshness.atomic` is always false: `freshness.projections` carries each Session's own `asOfSeq`, or null when unavailable. `unchangedAtCheck` compares its live sequence and sampled runtime identity after the reads; cold/unavailable checks remain null. It is a point-in-time check, not an atomic Team snapshot or future stability guarantee. Changed live source/identity samples downgrade consistency/completion evidence. Live runtime/route fields are sampled separately after projection reads.
+
+The native `dshBridge` projection cache version advances to 2. Public native cache restoration discards V1 rows and refolds the full event log; it does not rewrite Session history or activate an Agent. Missing logs or unsupported migration remain explicit failures. Older hosts lack these fields; do not infer attribution from their latest body or treat a root cursor as a whole-Team revision.
+
 ## Stop and host lifetime
 
 Disconnect never cancels native execution. `stop` fences managed input admission and role spawning, interrupts children before Lead, and rechecks native activity after child-result delivery. `accepted` describes cancellation requests; `quiescent` separately confirms observed execution inactivity. Pending inboxes and file changes remain intact.
