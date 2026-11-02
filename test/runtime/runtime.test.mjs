@@ -20,6 +20,7 @@ test('missing public model-selection APIs fail with an actionable capability nam
 test('missing session reflection and controller calls cannot pass capability verification', async () => {
  const modules=await native();
  assert.throws(()=>requireCapabilities({...modules,reflection:{TYPERT:{invocations:[]}}}),/session\/create reflection/);
+ assert.throws(()=>requireCapabilities({...modules,reflection:{TYPERT:{invocations:modules.reflection.TYPERT.invocations.filter(row=>row.method!=='events')}}}),/session\/events reflection/);
  assert.throws(()=>requireCapabilities({...modules,controller:{SessionController:class {}}}),/SessionController.create/);
 });
 test('a profile cannot use a different CLI version or bypass installation module identity', async () => {
