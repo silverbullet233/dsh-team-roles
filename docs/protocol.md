@@ -95,6 +95,10 @@ With this capability, `result.completed` requires native Team completion **and**
 
 Unfinished task records and closed failed/unloaded members still prevent automatic teardown, even when execution is idle. Preserve their status, ownership, inbox and history; never mark work completed just to pass shutdown. A record-preserving restart needs an explicit native execution-admission/drain guarantee; this API does not offer one. Inspect the returned blockers and coordinate normal cancellation through the Lead. If the guard still refuses, retain the Home and host rather than force-killing or bypassing it.
 
+Stop's retained-inbox behavior concerns the existing live native Agent. API Peer disconnect does not stop it, so inspect exact pending IDs and explicitly choose their disposition before continuation. Native grouping may place retained and newly admitted inputs into separate turns; check input/turn evidence rather than assume one continuation prompt means one model request.
+
+Structural native Agent/provider teardown is not the supported record-preserving restart path: the pinned loop can clear pending input while the bridge admission receipt remains acknowledged. The shutdown guard refuses pending work. Do not bypass it or treat a later cold absence as rejection, withdrawal or completion; absence remains inconclusive, and neither a new key nor an automatic resend resolves uncertainty.
+
 ## Durable upgrades
 
 The former `bridge` metadata directory and `dshBridge` Session projection key remain storage identities for existing receipts and histories. They do not enable the old transport. Role Lead reservations, member snapshots, Session storage and attachment storage retain their existing locations. Run one writer per Harness home/state directory.
