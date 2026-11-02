@@ -129,15 +129,16 @@ export class NativeSessionPort {
       || !['queue', 'steer'].some(mode => digest({ prompt: content[0].text, mode }) === hash)) {
       throw new TeamError('INPUT_CONTENT_CHANGED', 'Pending text no longer matches the saved admission intent. No work was cancelled.');
     }
-    return agent;
+    return { agent, session: agent.session };
   }
-  async withdrawInput(sessionId, inputId, messageId, hash) {
+  async withdrawInput(sessionId, inputId, messageId, hash, checked) {
     // Recheck after the durable intent write. No await separates identity/content
     // checks from the public synchronous Inbox removal; never resolve a cold Agent.
-    const agent = this.checkInputWithdrawal(sessionId, inputId, messageId, hash);
+    const { agent, session } = this.checkInputWithdrawal(sessionId, inputId, messageId, hash);
+    if (agent !== checked.agent || session !== checked.session) throw new TeamError('INPUT_RUNTIME_CHANGED', 'The checked Lead runtime was replaced during withdrawal admission.');
     if (!agent.inbox.remove(messageId)) throw new TeamError('INPUT_NOT_PENDING', 'The exact message is no longer pending.');
-    const asOfSeq = agent.session.seq - 1;
-    await this.ctx.sessions.flush(agent.session);
+    const asOfSeq = session.seq - 1;
+    await this.ctx.sessions.flush(session);
     return { asOfSeq };
   }
   async turnResult(params) {

@@ -91,11 +91,18 @@ test('concurrent identical withdrawals serialize to one native removal', async (
 });
 
 test('runtime replacement during persistence and a failed intent write cannot mutate an unchecked Agent', async () => {
-  for (const failure of ['replacement', 'write']) {
+  for (const failure of ['replacement', 'write', 'paired-replacement', 'same-agent-new-session']) {
     const f = fixture(), set = f.store.set;
     f.store.set = async (...args) => {
       if (failure === 'write') throw new Error('excluded fixture failure');
-      await set(...args); f.ctx.sessions.get = () => ({});
+      await set(...args);
+      if (failure === 'replacement') f.ctx.sessions.get = () => ({});
+      else {
+        const session = { header: { id: 'root' }, seq: f.session.seq };
+        const agent = failure === 'same-agent-new-session' ? f.agent : { ...f.agent, inbox: { nextTurn: structuredClone(f.messages), nextStep: [], remove(id) { f.calls.push(['replacement-remove', id]); return true; } } };
+        agent.session = session;
+        f.ctx.sessions.get = () => session; f.ctx.agents.get = () => agent;
+      }
     };
     await assert.rejects(f.service.dispatch('withdrawInput', request), { code: 'WITHDRAWAL_UNCERTAIN' });
     assert.equal(f.messages.length, 1); assert.deepEqual(f.calls, []);

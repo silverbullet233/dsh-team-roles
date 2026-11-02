@@ -351,7 +351,8 @@ export class ManagedTeams {
       if (!receipt) throw new TeamError('UNKNOWN_INPUT', 'This service has no admission intent for the requested Team/input ID.');
       if (receipt.withdrawal?.messageId !== undefined && receipt.withdrawal.messageId !== messageId) throw new TeamError('CONTENT_CONFLICT', 'A withdrawal is already bound to another native message ID.');
       if (receipt.withdrawal?.state === 'withdrawn') return { teamId: params.teamId, inputId, ...receipt.withdrawal, duplicate: true, filesRolledBack: false };
-      try { this.native.checkInputWithdrawal(params.teamId, inputId, messageId, receipt.digest); }
+      let checked;
+      try { checked = this.native.checkInputWithdrawal(params.teamId, inputId, messageId, receipt.digest); }
       catch (error) {
         if (receipt.withdrawal) throw new TeamError('WITHDRAWAL_UNCERTAIN', 'A previous withdrawal remains unconfirmed; missing pending evidence does not prove success. No cold work was resumed.');
         throw error;
@@ -359,7 +360,7 @@ export class ManagedTeams {
       const intent = { messageId, state: 'unconfirmed' };
       try {
         await this.store.set('input', key, { ...receipt, withdrawal: intent });
-        const cut = await this.native.withdrawInput(params.teamId, inputId, messageId, receipt.digest);
+        const cut = await this.native.withdrawInput(params.teamId, inputId, messageId, receipt.digest, checked);
         const withdrawal = { ...intent, state: 'withdrawn', asOfSeq: cut.asOfSeq };
         await this.store.set('input', key, { ...receipt, withdrawal });
         return { teamId: params.teamId, inputId, ...withdrawal, duplicate: false, filesRolledBack: false };
