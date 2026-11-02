@@ -1,5 +1,5 @@
 /** Native Session projection for managed-Team observations; no execution state is scheduled here. */
-const INPUT_LIMIT = 4096;
+export const INPUT_LIMIT = 4096;
 const TEXT_LIMIT = 8192;
 
 export function initialObservation() {

@@ -9,6 +9,7 @@ const requests = {
   create: z.strictObject({ key: id, text, cwd: text, workspaceId: id.optional(), agentPreset: id.optional(), leadRole: id.optional(), permissionPreset: id.optional() }),
   send: z.strictObject({ teamId: id, inputId: id, text, mode: z.enum(['queue', 'steer']).optional(), continue: z.boolean().optional() }),
   status: team, result: team, stop: team,
+  input: z.strictObject({ teamId: id, inputId: id }),
   turnResult: z.strictObject({ teamId: id, turn: z.number().int().positive().optional(), resultRef: z.string().min(1).max(2048).optional(), offset: z.number().int().nonnegative().optional(), maxBytes: z.number().int().min(4).max(32768).optional() }),
 };
 const codec = schema => ({ mode: 'strict', typeSymbol: 'dsh-team-roles#ManagedTeamValue', create: () => schema, jsonSchema: z.toJSONSchema(schema) });

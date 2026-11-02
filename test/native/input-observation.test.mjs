@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { mountNativeHost, until } from '../fixtures/native-harness.mjs';
+
+test('input admission and queued/entered evidence survive reconnect and cold passive reads', { timeout: 15000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-input-observation-'));
+  let host = await mountNativeHost({ root, respond: () => 'hang' });
+  t.after(async () => { await host.client.close(); await host.dispose(); await rm(root, { recursive: true, force: true }); });
+  assert((await host.client.request('health')).api.capabilities.includes('input-observations'));
+  const first = await host.client.request('create', { key: 'input-evidence', cwd: host.fixtureRoot, text: 'Synthetic T1.' });
+  await until(() => host.requests.length === 1);
+  const agent = host.ctx.agents.get(first.teamId);
+  await host.client.request('send', { teamId: first.teamId, inputId: 'queued-t2', text: 'Synthetic queued T2.' });
+  const seq = agent.session.seq;
+  const active = await host.client.request('input', { teamId: first.teamId, inputId: first.inputId });
+  assert.equal(active.admission.state, 'acknowledged'); assert.equal(active.native.phase, 'entered-turn');
+  assert.equal(active.native.entered.turn, 1); assert.equal(active.goalAccepted, null);
+  await host.client.close();
+  const pending = await host.client.request('input', { teamId: first.teamId, inputId: 'queued-t2' });
+  assert.equal(pending.native.phase, 'pending'); assert.equal(pending.native.pending.items[0].placement, 'next-turn');
+  const messageId = pending.native.pending.items[0].messageId;
+  assert.equal(agent.inbox.nextTurn.find(message => message.source.rpcId === 'queued-t2').id, messageId);
+  assert.equal(agent.session.seq, seq); assert.equal(host.requests.length, 1);
+  await assert.rejects(host.client.request('input', { teamId: first.teamId, inputId: 'unknown' }), { code: 'UNKNOWN_INPUT' });
+  await assert.rejects(host.client.request('input', { teamId: 'foreign-root', inputId: first.inputId }), { code: 'UNKNOWN_TEAM' });
+  // Fixture cleanup uses the public Inbox API; input observation itself never mutates it.
+  assert.equal(agent.inbox.remove(messageId), true);
+  await host.ctx.sessionController.cancel({ sessionId: first.teamId }); await agent.whenIdle();
+  const ended = await host.client.request('input', { teamId: first.teamId, inputId: first.inputId });
+  assert.equal(ended.native.phase, 'turn-ended'); assert.notEqual(ended.native.entered.outcome, 'completed');
+  await host.ctx.sessions.flush(agent.session);
+  await host.client.close(); await host.dispose();
+  host = await mountNativeHost({ root });
+  assert.equal(host.ctx.agents.list().length, 0);
+  const cold = await host.client.request('input', { teamId: first.teamId, inputId: first.inputId });
+  assert.deepEqual(cold, ended);
+  const absent = await host.client.request('input', { teamId: first.teamId, inputId: 'queued-t2' });
+  assert.equal(absent.admission.state, 'acknowledged'); assert.equal(absent.native.phase, 'not-observed');
+  assert.equal(absent.native.coverage.absenceIsConclusive, false);
+  assert.equal(host.ctx.agents.list().length, 0); assert.equal(host.requests.length, 0);
+});

@@ -88,6 +88,7 @@ export class ManagedTeams {
       case 'send': return this.send(params);
       case 'status': return this.status(params);
       case 'result': return this.result(params);
+      case 'input': return this.input(params);
       case 'turnResult':
         object(params, ['teamId', 'turn', 'resultRef', 'offset', 'maxBytes']);
         await this.record(params.teamId);
@@ -327,5 +328,15 @@ export class ManagedTeams {
       usage: null,
       fees: null,
     };
+  }
+
+  async input(params) {
+    object(params, ['teamId', 'inputId']);
+    await this.record(params.teamId);
+    const inputId = text(params.inputId, 'inputId', 256);
+    const receipt = await this.store.get('input', [params.teamId, inputId]);
+    if (receipt === undefined) throw new TeamError('UNKNOWN_INPUT', 'This service has no admission intent for the requested Team/input ID.');
+    return { teamId: params.teamId, inputId, admission: { state: receipt.accepted === true ? 'acknowledged' : 'unconfirmed' },
+      native: await this.native.inputState(params.teamId, inputId), goalAccepted: null };
   }
 }

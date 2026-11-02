@@ -3,6 +3,7 @@ import { TeamError } from './errors.mjs';
 import { Session } from '@deepseek-ai/dsh-session';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { readTurnResult } from './turn-result.mjs';
+import { observeInput, unavailableInput } from './input-observation.mjs';
 
 export class NativeSessionPort {
   constructor(ctx, roles) {
@@ -106,6 +107,12 @@ export class NativeSessionPort {
     } finally { binding[Symbol.dispose](); }
   }
   projections(sessionId) { return this.call('projections', { sessionId }); }
+  async inputState(sessionId, inputId) {
+    let projection;
+    try { projection = await this.projections(sessionId); }
+    catch { return unavailableInput('NATIVE_READ_FAILED'); }
+    return observeInput(projection, inputId);
+  }
   async turnResult(params) {
     const baseline = await this.projections(params.teamId);
     if (baseline === null) throw new TeamError('SESSION_MISSING', 'The native Session is absent.');
