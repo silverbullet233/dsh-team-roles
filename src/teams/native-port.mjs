@@ -5,6 +5,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { readTurnResult } from './turn-result.mjs';
 import { observeInput, unavailableInput } from './input-observation.mjs';
 import { digest } from './private-store.mjs';
+import { observeOwnedJobs } from './job-observation.mjs';
 
 export class NativeSessionPort {
   constructor(ctx, roles) {
@@ -108,6 +109,7 @@ export class NativeSessionPort {
     } finally { binding[Symbol.dispose](); }
   }
   projections(sessionId) { return this.call('projections', { sessionId }); }
+  jobs(teamId, limit) { return observeOwnedJobs(this.ctx, id => this.projections(id), teamId, limit); }
   async inputState(sessionId, inputId) {
     let projection;
     try { projection = await this.projections(sessionId); }
