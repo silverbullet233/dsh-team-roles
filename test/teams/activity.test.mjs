@@ -67,11 +67,11 @@ test('idle Agents do not hide owned, unowned or stopping native Jobs', async t =
 
 test('Job observation errors and changes refuse a lease even if the last Job is settled', async t => {
   for (const failure of ['throws', 'appears-settled', 'disappears', 'settles']) await t.test(failure, async () => {
-    const f = fixture(); let calls = 0;
+    const f = fixture(); let second = false;
+    const projections = f.native.projections;
+    f.native.projections = async (...args) => { second = true; return projections(...args); };
     f.native.ctx.jobs = { list() {
-      calls++;
       if (failure === 'throws') throw new Error('unavailable');
-      const second = calls > 2;
       if (failure === 'appears-settled') return second ? [{ id: 'job', status: 'completed' }] : [];
       if (failure === 'disappears') return second ? [] : [{ id: 'job', status: 'running' }];
       return [{ id: 'job', status: second ? 'completed' : 'running' }];
@@ -91,5 +91,18 @@ test('unchanging settled Jobs do not block a shutdown lease or consume producer 
     assert.equal(result.safeToStop, true);
     assert.deepEqual(result.blockers, []);
     assert(result.leaseExpiresAt > Date.now());
+  } finally { await f.service.close(); }
+});
+
+test('stable retained Jobs of unloaded roster members do not create a false changing baseline', async () => {
+  const f = fixture();
+  f.native.ctx.jobs = { list: caller => caller === 'child' ? [{ id: 'cold-job', owner: 'child', status: 'completed' }] : [] };
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const activity = await f.service.dispatch('activity');
+      assert.equal(activity.safeToStop, true);
+      assert.deepEqual(activity.blockers, []);
+    }
+    assert.equal((await f.service.dispatch('prepareShutdown')).safeToStop, true);
   } finally { await f.service.close(); }
 });

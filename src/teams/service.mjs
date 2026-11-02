@@ -126,6 +126,14 @@ export class ManagedTeams {
     const unsettled = [];
     const blockers = [];
     const owners = new Set(agents.map(agent => agent.id));
+    // Establish one owner scope before comparing Job baselines. A retained
+    // settled Job of a cold member must not look like newly started work.
+    for (const record of records) {
+      try {
+        const state = await this.native.snapshot(record.sessionId);
+        for (const member of state.teamActivity.members) owners.add(member.id);
+      } catch { unsettled.push(record.sessionId); }
+    }
     // list() without a caller sees only unowned Jobs. Include every known
     // owner, including cold roster members, without consuming Job output.
     const registry = typeof this.native.ctx.get === 'function' ? this.native.ctx.get('jobs') : this.native.ctx.jobs;
