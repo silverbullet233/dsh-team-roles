@@ -54,6 +54,7 @@ test('native Job observations filter owners, preserve model output and stay pass
   await host.ctx.plugin(jobs.default, {});
   const cold = await host.client.request('jobs', { teamId: first.teamId });
   assert.equal(cold.available, true); assert.equal(cold.jobs.length, 0);
+  assert.equal(cold.ownerScopeUnchangedAtCheck, null);
   assert.equal(cold.coverage.historical, false); assert.equal(cold.ownerCount, 2);
   assert.equal(host.ctx.agents.list().length, 0); assert.equal(host.requests.length, 0);
 });

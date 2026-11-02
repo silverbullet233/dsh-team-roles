@@ -40,7 +40,7 @@ test('samples prioritize live work, count omissions and bound Unicode progress w
 
 test('cold observations stay passive and registry absence/failure is not a zero-Job assertion', async () => {
   const f = fixture(); f.ctx.agents.get = () => undefined; f.ctx.sessions.get = () => undefined;
-  assert.equal((await f.read()).available, true);
+  const cold = await f.read(); assert.equal(cold.available, true); assert.equal(cold.ownerScopeUnchangedAtCheck, null);
   for (const registry of [undefined, { list() { throw new Error('excluded fixture secret'); } }]) {
     f.ctx.jobs = registry; const result = await f.read();
     assert.equal(result.available, false); assert.equal(result.counts, null); assert.equal(result.reason, 'JOB_REGISTRY_UNAVAILABLE');

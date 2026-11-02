@@ -43,8 +43,10 @@ export async function observeOwnedJobs(ctx, projections, teamId, limit = 20) {
   const active = row => ['running', 'stopping'].includes(row.status) ? 0 : 1;
   const sample = [...rows.values()].sort((a, b) => active(a) - active(b) || b.startedAt - a.startedAt || a.id.localeCompare(b.id)).slice(0, limit);
   const session = ctx.sessions.get(teamId);
+  const sameIdentity = ctx.agents.get(teamId) === identity && session === sessionIdentity;
+  const unchanged = !sameIdentity ? false : Number.isSafeInteger(session?.seq) ? session.seq - 1 === cut.asOfSeq : null;
   return { available: true, reason: null, rootAsOfSeq: cut.asOfSeq,
-    ownerScopeUnchangedAtCheck: ctx.agents.get(teamId) === identity && session === sessionIdentity && (!session || session.seq - 1 === cut.asOfSeq), ownerCount: owners.size,
+    ownerScopeUnchangedAtCheck: unchanged, ownerCount: owners.size,
     counts, jobs: sample.map(row => ({ id: row.id, owner: row.owner, status: row.status,
       kind: boundedId(row.kind) ? row.kind : null, kindOmitted: !boundedId(row.kind), startedAt: row.startedAt, finishedAt: Number.isFinite(row.finishedAt) ? row.finishedAt : null,
       progress: progress(row.progress), output: { totalBytes: Number.isSafeInteger(row.output?.total) && row.output.total >= 0 ? row.output.total : null,
