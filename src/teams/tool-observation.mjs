@@ -3,6 +3,9 @@ export const TOOL_CALL_LIMIT = 16;
 const identity = value => typeof value === 'string' && value.length > 0 && value.isWellFormed() && Buffer.byteLength(value) <= 256;
 export const initialTools = () => ({ turn: 0, open: false, observedCalls: 0, observedResults: 0, correlationComplete: true, omittedCallEvents: 0, unsettled: [], lastResult: null });
 export function foldTools(state, event) {
+  // The native tagged boundary ends a fork's inherited prefix. Untagged
+  // ordinary restore markers must retain this Session's own receipts.
+  if (event.type === 'session/end-seed' && event.data?.inherited === true) return initialTools();
   if (event.type === 'turn/start') return { ...initialTools(), turn: event.data.turn, open: true };
   if (event.type === 'turn/end' && event.data.turn === state.turn) return { ...state, open: false };
   if (event.data?.turn !== state.turn) return state;
@@ -44,6 +47,6 @@ export function toolObservationProjection(z) {
     unsettled: z.array(z.object({ callId: id, name: id.nullable(), step: seq, callSeq: seq }).strict()).max(TOOL_CALL_LIMIT),
     lastResult: z.object({ callId: id.nullable(), name: id.nullable(), step: seq.nullable(), callSeq: seq.nullable(), resultSeq: seq, isError: z.boolean().nullable() }).strict().nullable(),
   }).strict();
-  return { key: 'dshToolReceipts', stateVersion: 1, stateSchema: schema, init: initialTools, apply: foldTools,
+  return { key: 'dshToolReceipts', stateVersion: 2, stateSchema: schema, init: initialTools, apply: foldTools,
     wire: { viewSchema: schema, view: state => state } };
 }

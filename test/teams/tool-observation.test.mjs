@@ -44,11 +44,23 @@ test('new public native projection refolds old checkpoints without changing exis
   try {
     await ctx.plugin(SessionStore); await ctx.plugin(SessionProjectionRegistry);
     await ctx.sessionProjections.register(toolObservationProjection(z));
-    const old = { otherProjection: { ver: 2, seq: 1, val: {} } };
+    const old = { dshToolReceipts: { ver: 1, seq: 1, val: { ...start(), observedCalls: 900 } } };
+    assert.deepEqual(ctx.sessionProjections.viewCheckpoint(old), {});
     assert.equal(ctx.sessionProjections.restoreFloor(old), 0);
     const events = [event('turn/start', { turn: 1 }, 0), call('restored', 1)];
     const restored = ctx.sessionProjections.restore(old, events, 0, { version: SESSION_FORMAT_VERSION, id: 'fixture-tool-cache', createdAt: 0, isSeeded: false }, 0);
     assert.equal(restored.snapshot.values.dshToolReceipts.unsettled[0].callId, 'restored');
-    assert.equal(restored.checkpoint.dshToolReceipts.ver, 1);
+    assert.equal(restored.checkpoint.dshToolReceipts.ver, 2);
   } finally { await ctx.fiber.dispose(); }
+});
+
+test('fork-inherited tool calls do not become child receipts while ordinary restore keeps own evidence', () => {
+  let state = [event('turn/start', { turn: 1 }, 0), call('parent', 1), result('parent', 2)].reduce(foldTools, initialTools());
+  assert.equal(state.observedCalls, 1);
+  assert.deepEqual(foldTools(state, event('session/end-seed', {}, 3)), state);
+  state = foldTools(state, event('session/end-seed', { inherited: true }, 3));
+  assert.deepEqual(state, initialTools());
+  state = foldTools(state, event('turn/start', { turn: 2 }, 4));
+  state = foldTools(state, call('child', 5, { turn: 2 }));
+  assert.equal(state.observedCalls, 1); assert.equal(state.unsettled[0].callId, 'child');
 });
