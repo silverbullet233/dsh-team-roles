@@ -1,0 +1,37 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { mountNativeHost, until } from '../fixtures/native-harness.mjs';
+
+test('live queue withdrawal is durable, idempotent and never starts queued or cold work', { timeout: 15000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-input-withdrawal-'));
+  let host = await mountNativeHost({ root, respond: () => 'hang' });
+  t.after(async () => { await host.client.close(); await host.dispose(); await rm(root, { recursive: true, force: true }); });
+  const first = await host.client.request('create', { key: 'withdrawal', cwd: host.fixtureRoot, text: 'Synthetic active T1.' });
+  await until(() => host.requests.length === 1);
+  const followup = { teamId: first.teamId, inputId: 'queued-t2', text: 'Synthetic stale T2.' };
+  await host.client.request('send', followup);
+  const pending = await host.client.request('input', { teamId: first.teamId, inputId: followup.inputId });
+  const params = { teamId: first.teamId, inputId: followup.inputId, expectedMessageId: pending.native.pending.items[0].messageId };
+  await assert.rejects(host.client.request('withdrawInput', { ...params, expectedMessageId: 'stale' }), { code: 'INPUT_NOT_PENDING' });
+  const receipt = await host.client.request('withdrawInput', params);
+  assert.equal(receipt.state, 'withdrawn'); assert.equal(receipt.duplicate, false); assert.equal(receipt.filesRolledBack, false);
+  const state = await host.client.request('input', { teamId: first.teamId, inputId: followup.inputId });
+  assert.equal(state.native.phase, 'not-observed'); assert.equal(state.withdrawal.state, 'withdrawn');
+  assert.equal(state.admission.state, 'acknowledged'); assert.equal(state.goalAccepted, null);
+  await assert.rejects(host.client.request('send', followup), { code: 'INPUT_WITHDRAWN' });
+  await host.client.close();
+  assert.equal((await host.client.request('withdrawInput', params)).duplicate, true);
+  const agent = host.ctx.agents.get(first.teamId);
+  await host.ctx.sessionController.cancel({ sessionId: first.teamId }); await agent.whenIdle();
+  assert.equal(host.requests.length, 1); assert.equal(agent.inbox.nextTurn.length, 0);
+  await host.ctx.sessions.flush(agent.session); await host.client.close(); await host.dispose();
+  host = await mountNativeHost({ root });
+  assert.equal(host.ctx.agents.list().length, 0);
+  assert.deepEqual(await host.client.request('withdrawInput', params), { ...receipt, duplicate: true });
+  const cold = await host.client.request('input', { teamId: first.teamId, inputId: followup.inputId });
+  assert.deepEqual(cold.withdrawal, state.withdrawal);
+  assert.equal(host.ctx.agents.list().length, 0); assert.equal(host.requests.length, 0);
+});

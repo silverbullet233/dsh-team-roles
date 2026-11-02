@@ -4,6 +4,7 @@ import { Session } from '@deepseek-ai/dsh-session';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { readTurnResult } from './turn-result.mjs';
 import { observeInput, unavailableInput } from './input-observation.mjs';
+import { digest } from './private-store.mjs';
 
 export class NativeSessionPort {
   constructor(ctx, roles) {
@@ -112,6 +113,33 @@ export class NativeSessionPort {
     try { projection = await this.projections(sessionId); }
     catch { return unavailableInput('NATIVE_READ_FAILED'); }
     return observeInput(projection, inputId);
+  }
+  checkInputWithdrawal(sessionId, inputId, messageId, hash) {
+    const agent = this.ctx.agents.get(sessionId);
+    if (!agent || agent.id !== sessionId || agent.session !== this.ctx.sessions.get(sessionId) || agent.session.header.id !== sessionId || agent.session.header.parentSession) {
+      throw new TeamError('LIVE_INPUT_REQUIRED', 'Withdrawal requires the existing live managed Lead; cold execution was not resumed.');
+    }
+    const pending = [...agent.inbox.nextTurn, ...agent.inbox.nextStep];
+    const matches = pending.filter(message => message.source?.kind === 'user' && message.source.rpcId === inputId);
+    if (matches.length !== 1 || matches[0].id !== messageId || pending.filter(message => message.id === messageId).length !== 1) {
+      throw new TeamError('INPUT_NOT_PENDING', 'The exact input/message pair is no longer uniquely pending. No work was cancelled.');
+    }
+    const content = matches[0].content;
+    if (!Array.isArray(content) || content.length !== 1 || content[0].type !== 'text' || typeof content[0].text !== 'string'
+      || !['queue', 'steer'].some(mode => digest({ prompt: content[0].text, mode }) === hash)) {
+      throw new TeamError('INPUT_CONTENT_CHANGED', 'Pending text no longer matches the saved admission intent. No work was cancelled.');
+    }
+    return { agent, session: agent.session };
+  }
+  async withdrawInput(sessionId, inputId, messageId, hash, checked) {
+    // Recheck after the durable intent write. No await separates identity/content
+    // checks from the public synchronous Inbox removal; never resolve a cold Agent.
+    const { agent, session } = this.checkInputWithdrawal(sessionId, inputId, messageId, hash);
+    if (agent !== checked.agent || session !== checked.session) throw new TeamError('INPUT_RUNTIME_CHANGED', 'The checked Lead runtime was replaced during withdrawal admission.');
+    if (!agent.inbox.remove(messageId)) throw new TeamError('INPUT_NOT_PENDING', 'The exact message is no longer pending.');
+    const asOfSeq = session.seq - 1;
+    await this.ctx.sessions.flush(session);
+    return { asOfSeq };
   }
   async turnResult(params) {
     const baseline = await this.projections(params.teamId);
