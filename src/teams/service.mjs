@@ -124,10 +124,31 @@ export class ManagedTeams {
     const busy = agents.filter(agent => agent.status === 'running').map(agent => agent.id);
     const records = await this.store.list('team');
     const unsettled = [];
+    const blockers = [];
+    const owners = new Set(agents.map(agent => agent.id));
+    // list() without a caller sees only unowned Jobs. Include every known
+    // owner, including cold roster members, without consuming Job output.
+    const registry = typeof this.native.ctx.get === 'function' ? this.native.ctx.get('jobs') : this.native.ctx.jobs;
+    const readJobs = () => {
+      if (!registry) return [];
+      const jobs = new Map();
+      for (const owner of [undefined, ...owners]) {
+        for (const job of registry.list(owner)) jobs.set(job.id, { id: job.id, owner: job.owner ?? null, status: job.status });
+      }
+      return [...jobs.values()].sort((a, b) => a.id.localeCompare(b.id));
+    };
+    let beforeJobs;
+    try { beforeJobs = readJobs(); }
+    catch { blockers.push({ kind: 'job-observation-unavailable' }); }
     for (const record of records) {
       try {
         const state = await this.native.snapshot(record.sessionId);
         const activity = state.teamActivity;
+        for (const member of activity.members) owners.add(member.id);
+        if (activity.pendingTasks > 0) blockers.push({ kind: 'unfinished-tasks', teamId: record.sessionId, count: activity.pendingTasks });
+        for (const member of activity.members) {
+          if (member.runtimeState === 'unloaded' && member.lastTurnOutcome !== 'completed') blockers.push({ kind: 'unloaded-member-not-completed', teamId: record.sessionId, sessionId: member.id, outcome: member.lastTurnOutcome ?? null });
+        }
         const unresolved = !Array.isArray(state.members) || state.members.some(binding => !binding.memberId || binding.error || !activity.members.some(member => member.id === binding.memberId));
         const coldComplete = state.runtimeState === 'unloaded' && state.team !== null && activity.members.some(member => member.id === record.sessionId) && state.rootTurnCompleted && !state.team?.failure && activity.pendingTasks === 0
           && activity.members.every(member => member.observationAvailable && !member.openTurn && member.pendingInputs === 0 && member.lastTurnOutcome === 'completed' && member.phase !== 'provisioning');
@@ -151,8 +172,16 @@ export class ManagedTeams {
     unsettled.push(...agentsNow.filter(agent => !agents.includes(agent)).map(agent => agent.id));
     const runningNow = agentsNow.filter(agent => agent.status === 'running').map(agent => agent.id);
     busy.push(...runningNow.filter(id => !busy.includes(id)));
-    return { safeToStop: (this.native.roles?.tails?.size ?? 0) === 0 && this.pending.size <= 1 && (this.httpAdmissions ?? 0) <= 1 && busy.length === 0 && unsettled.length === 0,
-      running: busy, unsettled: [...new Set(unsettled)], admissions: Math.max(0, this.pending.size - 1) };
+    for (const agent of agentsNow) owners.add(agent.id);
+    try {
+      const jobs = readJobs();
+      for (const job of jobs) if (['running', 'stopping'].includes(job.status)) blockers.push({ kind: 'native-job', ...job });
+      // A Job can start and settle while asynchronous Session reads run. Do
+      // not bless that changing baseline, even if the last read is idle.
+      if (beforeJobs && !isDeepStrictEqual(beforeJobs, jobs)) blockers.push({ kind: 'job-state-changed' });
+    } catch { blockers.push({ kind: 'job-observation-unavailable' }); }
+    return { safeToStop: (this.native.roles?.tails?.size ?? 0) === 0 && this.pending.size <= 1 && (this.httpAdmissions ?? 0) <= 1 && busy.length === 0 && unsettled.length === 0 && blockers.length === 0,
+      running: busy, unsettled: [...new Set(unsettled)], admissions: Math.max(0, this.pending.size - 1), blockers };
   }
 
   async create(params) {
