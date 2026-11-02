@@ -9,8 +9,6 @@ test('native Job observations filter owners, preserve model output and stay pass
   const root = await mkdtemp(join(tmpdir(), 'dsh-job-observation-'));
   let host = await mountNativeHost({ root, respond: options => options.provider === 'fixture-left' ? 'hang' : textChunks('SYNTHETIC_COMPLETE') });
   t.after(async () => { await host.client.close(); await host.dispose(); await rm(root, { recursive: true, force: true }); });
-  const jobs = await import('@deepseek-ai/dsh-jobs-local');
-  await host.ctx.plugin(jobs.default, {});
   const detach = host.ctx.jobs.attachController('synthetic observation fixture');
   const first = await host.client.request('create', { key: 'job-team', cwd: host.fixtureRoot, text: 'Synthetic completed Lead.' });
   const lead = host.ctx.agents.get(first.teamId); await lead.whenIdle();
@@ -51,7 +49,6 @@ test('native Job observations filter owners, preserve model output and stay pass
   await host.ctx.sessions.flush(lead.session);
   await host.client.close(); detach(); await host.dispose();
   host = await mountNativeHost({ root });
-  await host.ctx.plugin(jobs.default, {});
   const cold = await host.client.request('jobs', { teamId: first.teamId });
   assert.equal(cold.available, true); assert.equal(cold.jobs.length, 0);
   assert.equal(cold.ownerScopeUnchangedAtCheck, null);

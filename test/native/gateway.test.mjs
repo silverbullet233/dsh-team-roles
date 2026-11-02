@@ -74,7 +74,9 @@ test('external roleTeams Remote shares native identities, survives disconnect, a
   assert.equal(status.rootTurnCompleted, false);
   assert.equal((await second.request('result', { teamId: created.teamId })).completed, false);
   await second.request('send', { teamId: created.teamId, inputId: 'external-steer', text: 'Synthetic steer.', mode: 'steer' });
-  assert.equal((await second.request('stop', { teamId: created.teamId })).quiescent, true);
+  const stopped = await second.request('stop', { teamId: created.teamId });
+  assert.equal(stopped.quiescent, false); // the steer remains in the retained inbox
+  assert.equal(stopped.pendingInputsRetained, true);
   hang = false;
   await second.request('send', { teamId: created.teamId, inputId: 'external-followup', text: 'Synthetic finish.', continue: true });
   await until(async () => (await second.request('result', { teamId: created.teamId })).completed === true);
@@ -158,8 +160,6 @@ test('shutdown guards real native Jobs after the owning Agent becomes idle', { t
   const root = await mkdtemp(join(tmpdir(), 'dsh-shutdown-jobs-'));
   const host = await mountNativeHost({ root });
   t.after(async () => { await host.client.close(); await host.dispose(); await rm(root, { recursive: true, force: true }); });
-  const jobs = await import('@deepseek-ai/dsh-jobs-local');
-  await host.ctx.plugin(jobs.default, {});
   const detach = host.ctx.jobs.attachController('synthetic shutdown fixture');
   t.after(detach);
   const created = await host.client.request('create', { key: 'idle-with-job', cwd: host.fixtureRoot, text: 'Synthetic completion.' });

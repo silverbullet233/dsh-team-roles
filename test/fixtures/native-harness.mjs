@@ -31,7 +31,7 @@ export async function until(check, { timeout = 10000, description = 'native stat
 }
 
 /** Keyless actual released native stack. Only browser credentials are deterministic in-memory fixtures. */
-export async function mountNativeHost({ root, roles = fixtureRoles, respond = () => textChunks('SYNTHETIC_COMPLETE'), maxRequests = 40, onRequest, managed = true } = {}) {
+export async function mountNativeHost({ root, roles = fixtureRoles, respond = () => textChunks('SYNTHETIC_COMPLETE'), maxRequests = 40, onRequest, managed = true, jobLimit = 10 } = {}) {
   const [cordis, testkit, agentLoop, persistence, query, subagent, spawn, team, teamTools, typert, gateway, access, connection, storage, storageJson, storageDomain, workspace, approval, llm, tools, rolesPlugin, teamPlugin] = await Promise.all([
     import('@deepseek-ai/cordis'), import('@deepseek-ai/dsh-agent-loop-testkit'), import('@deepseek-ai/dsh-agent-loop'), import('@deepseek-ai/dsh-session-persistence-jsonl'), import('@deepseek-ai/dsh-session-query'), import('@deepseek-ai/dsh-subagent'), import('@deepseek-ai/dsh-subagent-spawn-in-process'), import('@deepseek-ai/dsh-experimental-agent-team'), import('@deepseek-ai/dsh-experimental-tool-agent-team'), import('@deepseek-ai/dsh-typert-registry'), import('@deepseek-ai/dsh-api-gateway'), import('@deepseek-ai/dsh-api-remote-access'), import('@deepseek-ai/dsh-client-connection'), import('@deepseek-ai/dsh-storage'), import('@deepseek-ai/dsh-storage-json'), import('@deepseek-ai/dsh-storage-domain'), import('@deepseek-ai/dsh-workspace'), import('@deepseek-ai/dsh-user-approval'), import('@deepseek-ai/dsh-llm'), import('@deepseek-ai/dsh-tools'), import('../../src/roles/index.mjs'), import('../../src/teams/index.mjs'),
   ]);
@@ -97,6 +97,7 @@ export async function mountNativeHost({ root, roles = fixtureRoles, respond = ()
     const metadata = await import('@deepseek-ai/dsh-api-session-controller/typert');
     ctx.effect(() => ctx.typert.register(metadata.TYPERT));
     await ctx.plugin(controller.default, { nativeOpen: false });
+    await ctx.plugin((await import('@deepseek-ai/dsh-jobs-local')).default, { maxConcurrentJobsPerOwner: jobLimit });
     if (managed) await ctx.plugin(teamPlugin, { stateDirectory: join(root, 'bridge-state'), allowedRoots: [fixtureRoot] });
     else {
       const [{ z }, { teamObservationProjection }] = await Promise.all([import('zod'), import('../../src/teams/projection.mjs')]);
