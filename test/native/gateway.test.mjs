@@ -153,3 +153,28 @@ test('completed cold history permits host shutdown and an expired shutdown lease
   await until(() => Date.now() >= prepared.leaseExpiresAt, { timeout: 7000 });
   assert.equal((await host.client.request('health')).ok, true);
 });
+
+test('shutdown guards real native Jobs after the owning Agent becomes idle', { timeout: 15000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-shutdown-jobs-'));
+  const host = await mountNativeHost({ root });
+  t.after(async () => { await host.client.close(); await host.dispose(); await rm(root, { recursive: true, force: true }); });
+  const jobs = await import('@deepseek-ai/dsh-jobs-local');
+  await host.ctx.plugin(jobs.default, {});
+  const detach = host.ctx.jobs.attachController('synthetic shutdown fixture');
+  t.after(detach);
+  const created = await host.client.request('create', { key: 'idle-with-job', cwd: host.fixtureRoot, text: 'Synthetic completion.' });
+  await host.ctx.agents.get(created.teamId).whenIdle();
+  for (const owner of [undefined, created.teamId]) {
+    const done = Promise.withResolvers();
+    const id = host.ctx.jobs.start({ kind: 'fixture', label: 'Synthetic deferred Job', ...(owner === undefined ? {} : { owner }), run: () => ({ done: done.promise, cancel: () => done.resolve({ status: 'killed' }) }) });
+    assert.equal(host.ctx.agents.get(created.teamId).status, 'idle');
+    assert.equal((await host.client.request('prepareShutdown')).safeToStop, false);
+    let activity = await host.client.request('activity');
+    assert(activity.blockers.some(b => b.kind === 'native-job' && b.id === id && b.status === 'running'));
+    host.ctx.jobs.kill(id, owner);
+    await host.ctx.jobs.wait(id, 1000, owner);
+    activity = await host.client.request('activity');
+    assert.equal(activity.safeToStop, true);
+    assert.deepEqual(activity.blockers, []);
+  }
+});
