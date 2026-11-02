@@ -8,6 +8,10 @@ import { digest } from './private-store.mjs';
 import { observeOwnedJobs } from './job-observation.mjs';
 import { executionEvidence } from './execution-evidence.mjs';
 
+const runtimeIdentity = (ctx, id, agent = ctx.agents.get(id)) => ({ agent, session: agent?.session, registeredSession: ctx.sessions.get(id) });
+const sameRuntime = (ctx, id, observed) => observed !== undefined && ctx.agents.get(id) === observed.agent
+  && observed.agent?.session === observed.session && ctx.sessions.get(id) === observed.registeredSession;
+
 export class NativeSessionPort {
   constructor(ctx, roles) {
     for (const name of ['connection', 'typertGateway', 'sessionController', 'sessions', 'agents', 'sessionProjections', 'agentTeams']) {
@@ -157,8 +161,8 @@ export class NativeSessionPort {
     if (session !== undefined) await this.ctx.sessions.flush(session);
   }
 
-  async snapshot(sessionId) {
-    const rootIdentity = this.ctx.agents.get(sessionId);
+  async snapshot(sessionId, identities = new Map()) {
+    identities.set(sessionId, runtimeIdentity(this.ctx, sessionId));
     const projections = await this.projections(sessionId);
     if (projections === null) throw new TeamError('SESSION_MISSING', 'The native Session is absent; no replacement was created.');
     if (projections.kind !== 'sequenced') throw new TeamError('MIGRATION_REQUIRED', 'The native Session requires an explicit supported migration.');
@@ -172,11 +176,10 @@ export class NativeSessionPort {
     const liveRoster = agent === undefined ? null : this.ctx.agentTeams.listMembers(agent);
     const members = [];
     const cuts = new Map([[sessionId, projections.asOfSeq]]);
-    const identities = new Map([[sessionId, rootIdentity]]);
     for (const member of team?.members ?? []) {
       const native = liveRoster?.find(row => row.id === member.id);
       const live = this.ctx.agents.get(member.id);
-      if (member.id !== sessionId) identities.set(member.id, live);
+      if (member.id !== sessionId) identities.set(member.id, runtimeIdentity(this.ctx, member.id, live));
       let current = member.id === sessionId ? projections : null;
       if (member.id !== sessionId) current = await this.projections(member.id);
       if (current?.kind === 'sequenced') cuts.set(member.id, current.asOfSeq);
@@ -194,7 +197,7 @@ export class NativeSessionPort {
     const bindings = this.roles ? await this.roles.bindings(sessionId) : [];
     const rootNow = this.ctx.agents.get(sessionId);
     const rosterNow = rootNow === undefined ? null : this.ctx.agentTeams.listMembers(rootNow);
-    const changed = rootNow !== agent || [...identities].some(([id, observed]) => this.ctx.agents.get(id) !== observed) || [...cuts].some(([id, cut]) => {
+    const changed = rootNow !== agent || [...identities].some(([id, observed]) => !sameRuntime(this.ctx, id, observed)) || [...cuts].some(([id, cut]) => {
       const live = this.ctx.sessions.get(id);
       return typeof live?.seq === 'number' && live.seq - 1 !== cut;
     });
@@ -219,7 +222,7 @@ export class NativeSessionPort {
       asOfSeqScope: 'root-session',
       freshness: { atomic: false, projections: [...identities.keys()].map(id => {
         const cut = cuts.get(id) ?? null, live = this.ctx.sessions.get(id);
-        return { sessionId: id, asOfSeq: cut, unchangedAtCheck: cut === null || typeof live?.seq !== 'number' ? null : live.seq - 1 === cut && this.ctx.agents.get(id) === identities.get(id) };
+        return { sessionId: id, asOfSeq: cut, unchangedAtCheck: cut === null || typeof live?.seq !== 'number' ? null : live.seq - 1 === cut && sameRuntime(this.ctx, id, identities.get(id)) };
       }) },
       runtimeState: rootNow === undefined ? 'unloaded' : rootNow.status,
       taskState: activityState === 'quiescent' ? rootTurnState : activityState,
@@ -243,22 +246,22 @@ export class NativeSessionPort {
   }
 
   /** Native owner authority only; cold/replaced owner runtimes are never resumed. */
-  cancelOwnedJobs(sessionId, snapshot, root, outcomes) {
+  cancelOwnedJobs(sessionId, snapshot, identities, outcomes) {
     let available = snapshot.consistent === true;
     try {
       const registry = typeof this.ctx.get === 'function' ? this.ctx.get('jobs') : this.ctx.jobs;
       if (!registry) return false;
       const owners = new Set([sessionId, ...(snapshot.team?.members ?? []).map(member => member.id)]);
-      const identities = new Map([...owners].map(id => { const agent = this.ctx.agents.get(id); return [id, { agent, session: agent?.session }]; }));
+      const root = identities.get(sessionId);
       for (const owner of owners) for (const job of registry.list(owner)) {
         if (job.owner !== owner) continue; // list(caller) also exposes unowned Jobs.
         if (typeof job.id !== 'string' || !job.id.length || Buffer.byteLength(job.id) > 256 || !['running', 'stopping', 'completed', 'killed', 'failed'].includes(job.status)) { available = false; continue; }
         if (!['running', 'stopping'].includes(job.status) || outcomes.has(job.id)) continue;
         const identity = identities.get(owner), agent = this.ctx.agents.get(owner);
-        const rootValid = root.agent && this.ctx.agents.get(sessionId) === root.agent && root.agent.session === root.session
-          && this.ctx.sessions.get(sessionId) === root.session && root.session.header.id === sessionId && !root.session.header.parentSession;
-        const ownerValid = rootValid && agent && agent === identity.agent && agent.session === identity.session && this.ctx.sessions.get(owner) === identity.session
-          && identity.session.header.id === owner && (owner === sessionId || (identity.session.header.parentSession === sessionId && this.ctx.agentTeams.listMembers(root.agent).some(member => member.id === owner)));
+        const rootValid = root?.agent && sameRuntime(this.ctx, sessionId, root) && root.session === root.registeredSession
+          && root.session?.header.id === sessionId && !root.session.header.parentSession;
+        const ownerValid = rootValid && agent && sameRuntime(this.ctx, owner, identity) && identity.session === identity.registeredSession
+          && identity.session?.header.id === owner && (owner === sessionId || (identity.session.header.parentSession === sessionId && this.ctx.agentTeams.listMembers(root.agent).some(member => member.id === owner)));
         if (!available || !rootValid || !ownerValid) { outcomes.set(job.id, { id: job.id, owner, cancellation: 'failed', code: 'OWNER_OR_SCOPE_UNAVAILABLE' }); continue; }
         try {
           const cancellation = registry.kill(job.id, owner, 'Managed Team stop requested.');
@@ -280,13 +283,14 @@ export class NativeSessionPort {
     const deadline = Date.now() + 5000;
     try {
       for (let pass = 0; pass < 6 && Date.now() < deadline; pass++) {
-        const rootAgent = this.ctx.agents.get(sessionId), root = { agent: rootAgent, session: rootAgent?.session };
-        const snapshot = await this.snapshot(sessionId);
-        jobsAvailable = this.cancelOwnedJobs(sessionId, snapshot, root, jobOutcomes);
+        const identities = new Map();
+        const snapshot = await this.snapshot(sessionId, identities);
+        jobsAvailable = this.cancelOwnedJobs(sessionId, snapshot, identities, jobOutcomes);
         const roster = snapshot.team?.members ?? [];
         const ids = [...new Set([...roster.filter(member => member.id !== sessionId).map(member => member.id), sessionId])];
         for (const id of ids) {
           const agent = this.ctx.agents.get(id);
+          if (agent && !sameRuntime(this.ctx, id, identities.get(id))) { outcomes.set(id, { sessionId: id, cancellation: 'failed', code: 'OWNER_CHANGED' }); continue; }
           if (agent?.status !== 'running') { if (!outcomes.has(id)) outcomes.set(id, { sessionId: id, cancellation: 'inactive' }); continue; }
           try {
             if (id === sessionId) await this.cancel(id);

@@ -34,7 +34,7 @@ function fixture() {
   } };
   const port = Object.assign(Object.create(NativeSessionPort.prototype), { ctx });
   const snapshot = { consistent: true, team: { members: [{ id: 'root' }, { id: 'child' }] } };
-  const root = { agent: agents.get('root'), session: agents.get('root').session }, outcomes = new Map();
+  const root = new Map([...agents].map(([id, agent]) => [id, { agent, session: agent.session, registeredSession: agent.session }])), outcomes = new Map();
   return { ctx, port, agents, rows, calls, snapshot, root, outcomes };
 }
 
@@ -47,7 +47,7 @@ test('Job cancellation serves exact current Team owners, never unowned or foreig
 });
 
 test('cold/replaced/reparented owner identities are refused without activation or foreign cancellation', () => {
-  for (const change of [f => f.agents.delete('child'), f => { f.agents.get('child').session.header.parentSession = 'foreign'; }, f => { f.agents.set('root', { id: 'root', session: f.root.session }); }]) {
+  for (const change of [f => f.agents.delete('child'), f => { f.agents.get('child').session.header.parentSession = 'foreign'; }, f => { f.agents.set('root', { id: 'root', session: f.root.get('root').session }); }]) {
     const f = fixture(); change(f);
     f.port.cancelOwnedJobs('root', f.snapshot, f.root, f.outcomes);
     assert(!f.calls.some(([id]) => id === 'child-job'));
@@ -62,4 +62,34 @@ test('Job cancellation scans beyond presentation samples and sanitizes producer 
   other.port.cancelOwnedJobs('root', other.snapshot, other.root, other.outcomes);
   assert([...other.outcomes.values()].every(row => row.cancellation === 'failed'));
   assert.doesNotMatch(JSON.stringify([...other.outcomes.values()]), /secret/);
+});
+
+test('same-sequence member Session replacement during observation refuses Job cancellation', async () => {
+  const f = fixture(); f.rows.splice(0, f.rows.length, { id: 'child-job', owner: 'child', status: 'running' });
+  for (const agent of f.agents.values()) { agent.status = 'idle'; agent.model = { current: () => undefined }; }
+  const observation = { open: false, lastEnd: { reason: 'completed' }, inputs: [], output: '' };
+  f.port.projections = async id => ({ kind: 'sequenced', asOfSeq: 8, values: { dshBridge: observation, inbox: { 'next-turn': [], 'next-step': [] },
+    agentTeam: id === 'root' ? { members: [{ id: 'root', name: 'lead', role: 'lead' }, { id: 'child', name: 'worker', role: 'teammate' }], tasks: [] } : null } });
+  let replace = true;
+  f.port.roles = { stopping: new Set(), tails: new Map(), async bindings() {
+    if (replace) { replace = false; f.agents.get('child').session = { header: { id: 'child', parentSession: 'root' }, seq: 9 }; }
+    return [];
+  } };
+  const stopped = await f.port.stop('root');
+  assert.deepEqual(f.calls, []); assert.equal(stopped.accepted, false); assert.equal(stopped.quiescent, false);
+  assert.equal(stopped.jobCancellations.failed, 1);
+});
+
+test('the original observed member Session is retained through the post-snapshot cancellation boundary', async () => {
+  const f = fixture();
+  for (const agent of f.agents.values()) { agent.status = 'idle'; agent.model = { current: () => undefined }; }
+  const observation = { open: false, lastEnd: { reason: 'completed' }, inputs: [], output: '' };
+  f.port.projections = async id => ({ kind: 'sequenced', asOfSeq: 8, values: { dshBridge: observation, inbox: { 'next-turn': [], 'next-step': [] },
+    agentTeam: id === 'root' ? { members: [{ id: 'root', name: 'lead' }, { id: 'child', name: 'worker' }], tasks: [] } : null } });
+  const checked = new Map(), snapshot = await f.port.snapshot('root', checked);
+  assert.equal(snapshot.consistent, true);
+  f.agents.get('child').session = { header: { id: 'child', parentSession: 'root' }, seq: 9 };
+  f.port.cancelOwnedJobs('root', snapshot, checked, f.outcomes);
+  assert(!f.calls.some(([id]) => id === 'child-job'));
+  assert.equal(f.outcomes.get('child-job').cancellation, 'failed');
 });

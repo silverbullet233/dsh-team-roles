@@ -9,6 +9,7 @@ function fixture() {
   const observation = initialObservation();
   const agents = new Map();
   const children = new Map();
+  const sessions = new Map();
   const projection = { kind: 'sequenced', asOfSeq: 1, values: { dshBridge: observation, agentTeam: { members: [{ id: 'root', name: 'lead', role: 'lead' }, { id: 'child', name: 'worker', role: 'teammate' }], tasks: [] }, inbox: { 'next-turn': [], 'next-step': [] }, modelSelection: { lastUsed: { provider: 'observed', model: 'actual' } } } };
   const ctx = {
     connection: { createPeer(options) { calls.push(['peer', options]); return { dispose: async () => calls.push(['peer-disposed']) }; } },
@@ -17,7 +18,7 @@ function fixture() {
       if (request.method === 'cancel') agents.get(request.args.request.sessionId).status = 'idle';
       return request.method === 'projections' ? structuredClone(request.args.request.sessionId === 'root' ? projection : children.get(request.args.request.sessionId) ?? null) : { accepted: true };
     } },
-    sessionController: {}, sessions: { get() { return {}; }, async flush() { calls.push(['flush']); } },
+    sessionController: {}, sessions: { get(id) { if (!sessions.has(id)) sessions.set(id, {}); return sessions.get(id); }, async flush() { calls.push(['flush']); } },
     agents: { get(id) { return agents.get(id); } }, sessionProjections: {},
     agentTeams: {
       listMembers() { return projection.values.agentTeam.members.map(member => ({ ...member, status: member.phase === 'provisioning' ? 'provisioning' : agents.get(member.id)?.status === 'running' ? 'running' : 'inactive' })); },
@@ -98,7 +99,8 @@ test('freshness exposes per-Session cuts, unknown cold checks and changed member
   agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } });
   agents.set('child', { id: 'child', status: 'idle' });
   children.set('child', { kind: 'sequenced', asOfSeq: 7, values: { dshBridge: { ...initialObservation(), lastEnd: { turn: 1, reason: 'completed' } }, inbox: { 'next-turn': [], 'next-step': [] } } });
-  const seq = { root: 2, child: 8 }; ctx.sessions.get = id => ({ seq: seq[id] });
+  const seq = { root: 2, child: 8 }, sessions = { root: { get seq() { return seq.root; } }, child: { get seq() { return seq.child; } } };
+  ctx.sessions.get = id => sessions[id];
   let status = await port.snapshot('root');
   assert.equal(status.asOfSeq, 1); assert.equal(status.asOfSeqScope, 'root-session');
   assert.deepEqual(status.freshness, { atomic: false, projections: [{ sessionId: 'root', asOfSeq: 1, unchangedAtCheck: true }, { sessionId: 'child', asOfSeq: 7, unchangedAtCheck: true }] });
@@ -114,7 +116,7 @@ test('member runtime replacement cannot reuse the same sequence as unchanged evi
   const { port, ctx, agents, children } = fixture();
   agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } }); agents.set('child', { id: 'child', status: 'idle' });
   children.set('child', { kind: 'sequenced', asOfSeq: 1, values: { dshBridge: initialObservation(), inbox: { 'next-turn': [], 'next-step': [] } } });
-  ctx.sessions.get = () => ({ seq: 2 });
+  const sessions = { root: { seq: 2 }, child: { seq: 2 } }; ctx.sessions.get = id => sessions[id];
   port.roles.bindings = async () => { agents.set('child', { id: 'child', status: 'idle' }); return []; };
   const status = await port.snapshot('root');
   assert.equal(status.consistent, false); assert.equal(status.freshness.projections[1].unchangedAtCheck, false);
@@ -124,7 +126,7 @@ test('root replacement during its first projection read cannot become unchanged 
   const { port, ctx, agents, observation } = fixture();
   observation.lastEnd = { turn: 1, reason: 'completed' };
   agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } });
-  ctx.sessions.get = () => ({ seq: 2 });
+  const sessions = { root: { seq: 2 } }; ctx.sessions.get = id => sessions[id];
   const invoke = ctx.typertGateway.invoke;
   let replaced = false;
   ctx.typertGateway.invoke = request => {
