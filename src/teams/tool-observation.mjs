@@ -22,11 +22,12 @@ export function foldTools(state, event) {
     const { message, step } = event.data, callId = message?.toolCallId;
     const index = state.unsettled.findIndex(row => row.callId === callId && row.step === step);
     const call = state.unsettled[index];
+    const linked = state.correlationComplete && index !== -1;
     return { ...state, observedResults: state.observedResults + 1,
       correlationComplete: state.correlationComplete && index !== -1,
       unsettled: index === -1 ? state.unsettled : state.unsettled.filter((_, i) => i !== index),
-      lastResult: { callId: identity(callId) ? callId : null, name: call?.name ?? null, step: Number.isSafeInteger(step) && step >= 0 ? step : null,
-        callSeq: call?.callSeq ?? null, resultSeq: event.seq, isError: typeof message?.isError === 'boolean' ? message.isError : null } };
+      lastResult: { callId: identity(callId) ? callId : null, name: linked ? call.name : null, step: Number.isSafeInteger(step) && step >= 0 ? step : null,
+        callSeq: linked ? call.callSeq : null, resultSeq: event.seq, isError: typeof message?.isError === 'boolean' ? message.isError : null } };
   }
   return state;
 }
@@ -47,6 +48,6 @@ export function toolObservationProjection(z) {
     unsettled: z.array(z.object({ callId: id, name: id.nullable(), step: seq, callSeq: seq }).strict()).max(TOOL_CALL_LIMIT),
     lastResult: z.object({ callId: id.nullable(), name: id.nullable(), step: seq.nullable(), callSeq: seq.nullable(), resultSeq: seq, isError: z.boolean().nullable() }).strict().nullable(),
   }).strict();
-  return { key: 'dshToolReceipts', stateVersion: 2, stateSchema: schema, init: initialTools, apply: foldTools,
+  return { key: 'dshToolReceipts', stateVersion: 3, stateSchema: schema, init: initialTools, apply: foldTools,
     wire: { viewSchema: schema, view: state => state } };
 }

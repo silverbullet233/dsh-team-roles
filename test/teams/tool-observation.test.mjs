@@ -39,18 +39,37 @@ test('overflow, duplicate, unmatched and invalid identities leave correlation un
   assert.deepEqual(toolReceiptView(undefined), { available: false, reason: 'PROJECTION_UNAVAILABLE' });
 });
 
+test('incomplete correlation never links a result to one ambiguous request', () => {
+  const duplicate = [call('same', 1, { name: 'first_tool' }), call('same', 2, { name: 'second_tool' })].reduce(foldTools, start());
+  const ambiguous = foldTools(duplicate, result('same', 3));
+  assert.equal(ambiguous.correlationComplete, false);
+  assert.deepEqual(ambiguous.lastResult, { callId: 'same', name: null, step: 1, callSeq: null, resultSeq: 3, isError: false });
+  assert.equal(toolReceiptView(ambiguous).unsettledCount, null);
+  let overflow = start();
+  for (let i = 0; i <= TOOL_CALL_LIMIT; i++) overflow = foldTools(overflow, call(`overflow-${i}`, i + 1));
+  const incomplete = foldTools(overflow, result('overflow-0', 50));
+  assert.equal(incomplete.lastResult.name, null); assert.equal(incomplete.lastResult.callSeq, null);
+  assert.equal(incomplete.lastResult.resultSeq, 50); assert.equal(incomplete.observedResults, 1);
+  const restored = [event('turn/start', { turn: 2 }, 51), call('healthy', 52, { turn: 2 }), result('healthy', 53, { turn: 2 })].reduce(foldTools, incomplete);
+  assert.equal(restored.correlationComplete, true); assert.equal(restored.lastResult.name, 'fixture_read'); assert.equal(restored.lastResult.callSeq, 52);
+});
+
 test('new public native projection refolds old checkpoints without changing existing projection versions', async () => {
   const ctx = new Context();
   try {
     await ctx.plugin(SessionStore); await ctx.plugin(SessionProjectionRegistry);
     await ctx.sessionProjections.register(toolObservationProjection(z));
-    const old = { dshToolReceipts: { ver: 1, seq: 1, val: { ...start(), observedCalls: 900 } } };
-    assert.deepEqual(ctx.sessionProjections.viewCheckpoint(old), {});
-    assert.equal(ctx.sessionProjections.restoreFloor(old), 0);
-    const events = [event('turn/start', { turn: 1 }, 0), call('restored', 1)];
-    const restored = ctx.sessionProjections.restore(old, events, 0, { version: SESSION_FORMAT_VERSION, id: 'fixture-tool-cache', createdAt: 0, isSeeded: false }, 0);
-    assert.equal(restored.snapshot.values.dshToolReceipts.unsettled[0].callId, 'restored');
-    assert.equal(restored.checkpoint.dshToolReceipts.ver, 2);
+    for (const ver of [1, 2]) {
+      const old = { dshToolReceipts: { ver, seq: 3, val: { ...start(), observedCalls: 900 } } };
+      assert.deepEqual(ctx.sessionProjections.viewCheckpoint(old), {});
+      assert.equal(ctx.sessionProjections.restoreFloor(old), 0);
+      const events = [event('turn/start', { turn: 1 }, 0), call('restored', 1), call('restored', 2), result('restored', 3)];
+      const restored = ctx.sessionProjections.restore(old, events, 0, { version: SESSION_FORMAT_VERSION, id: 'fixture-tool-cache', createdAt: 0, isSeeded: false }, 0);
+      assert.equal(restored.snapshot.values.dshToolReceipts.lastResult.callId, 'restored');
+      assert.equal(restored.snapshot.values.dshToolReceipts.lastResult.name, null);
+      assert.equal(restored.snapshot.values.dshToolReceipts.lastResult.callSeq, null);
+      assert.equal(restored.checkpoint.dshToolReceipts.ver, 3);
+    }
   } finally { await ctx.fiber.dispose(); }
 });
 
