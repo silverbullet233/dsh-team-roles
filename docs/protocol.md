@@ -95,6 +95,14 @@ With this capability, `result.completed` requires native Team completion **and**
 
 Unfinished task records and closed failed/unloaded members still prevent automatic teardown, even when execution is idle. Preserve their status, ownership, inbox and history; never mark work completed just to pass shutdown. A record-preserving restart needs an explicit native execution-admission/drain guarantee; this API does not offer one. Inspect the returned blockers and coordinate normal cancellation through the Lead. If the guard still refuses, retain the Home and host rather than force-killing or bypassing it.
 
+## Tool-call receipts (development)
+
+Development capability `tool-call-observations` adds `toolActivity` to existing root-only status/result responses; no request schema or native method changes. Published host 0.6.0 lacks it. The `native-tool-receipts-v1` format samples at most 32 root/declared-roster Sessions with per-Session cuts and freshness, never an atomic Team snapshot. Missing projections stay unavailable. Public native projection `dshToolReceipts` reconstructs receipts passively from Session events without activating cold Agents or changing the existing `dshBridge` projection version.
+
+The scope is each Session's latest-started turn. `tool/call` proves a model request, not actual handler/process execution; `tool/result` proves a committed native receipt, not business acceptance. Observed call/result counters and native error flags are separate from unsettled correlation. A terminal turn can still have unmatched receipts. Arguments, commands, result payloads, reasoning and credentials are excluded; bounded opaque IDs are omitted whole when invalid/oversized.
+
+The projection retains up to 16 unsettled identities and the latest result metadata; status/result sample four unsettled identities per Session. Overflow, duplicate/unmatched correlation or invalid call identity makes `unsettledCount` null while preserving known samples, observed event counts and explicit omissions. New turns reset this view. This is not complete task history, a waiting-reason detector, a tool controller or extra completion/stop authority. Optional clients can discover the capability and recognize the format; older status/result requests remain compatible.
+
 ## Durable upgrades
 
 The former `bridge` metadata directory and `dshBridge` Session projection key remain storage identities for existing receipts and histories. They do not enable the old transport. Role Lead reservations, member snapshots, Session storage and attachment storage retain their existing locations. Run one writer per Harness home/state directory.

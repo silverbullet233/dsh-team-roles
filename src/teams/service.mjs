@@ -325,6 +325,7 @@ export class ManagedTeams {
       nativeTeamCompleted: execution.nativeTeamCompleted,
       execution,
       teamActivity: status.teamActivity,
+      toolActivity: status.toolActivity,
       output: status.observation.output,
       outputSource: status.observation.outputSource ?? null,
       latestAssistant: status.observation.latestAssistant ?? null,

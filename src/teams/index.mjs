@@ -4,6 +4,7 @@ import { TeamStore } from './private-store.mjs';
 import { ManagedTeams } from './service.mjs';
 import { NativeSessionPort } from './native-port.mjs';
 import { teamObservationProjection } from './projection.mjs';
+import { toolObservationProjection } from './tool-observation.mjs';
 import { RoleTeamsRemote } from './remote-service.mjs';
 import { TeamError } from './errors.mjs';
 import { verifyRuntime } from '../../scripts/runtime/verify.mjs';
@@ -38,6 +39,7 @@ export async function apply(ctx, config) {
   await assertNativeHost(ctx);
   const { z } = await import('zod');
   const projection = await ctx.sessionProjections.register(teamObservationProjection(z));
+  const toolProjection = await ctx.sessionProjections.register(toolObservationProjection(z));
   const store = await new TeamStore(join(config.stateDirectory, 'bridge')).open();
   let native;
   let teams;
@@ -56,6 +58,7 @@ export async function apply(ctx, config) {
     await native?.close();
     await store.close();
     await projection.dispose?.();
+    await toolProjection.dispose?.();
     throw error;
   }
   ctx.effect(() => async () => {
