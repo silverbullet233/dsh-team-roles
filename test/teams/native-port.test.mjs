@@ -119,6 +119,25 @@ test('member runtime replacement cannot reuse the same sequence as unchanged evi
   assert.equal(status.consistent, false); assert.equal(status.freshness.projections[1].unchangedAtCheck, false);
 });
 
+test('root replacement during its first projection read cannot become unchanged evidence', async () => {
+  const { port, ctx, agents, observation } = fixture();
+  observation.lastEnd = { turn: 1, reason: 'completed' };
+  agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } });
+  ctx.sessions.get = () => ({ seq: 2 });
+  const invoke = ctx.typertGateway.invoke;
+  let replaced = false;
+  ctx.typertGateway.invoke = request => {
+    const value = invoke(request);
+    if (request.method === 'projections' && request.args.request.sessionId === 'root' && !replaced) {
+      replaced = true; agents.set('root', { id: 'root', status: 'idle', model: { current: () => undefined } });
+    }
+    return value;
+  };
+  const status = await port.snapshot('root');
+  assert.equal(status.consistent, false); assert.equal(status.rootTurnCompleted, false);
+  assert.equal(status.freshness.projections[0].asOfSeq, 1); assert.equal(status.freshness.projections[0].unchangedAtCheck, false);
+});
+
 test('native inactive unloaded children with durable completion and empty inbox allow Team completion without activation', async () => {
   const { port, agents, children, observation, calls } = fixture();
   observation.lastEnd = { turn: 1, reason: 'completed' };

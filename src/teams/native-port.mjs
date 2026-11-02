@@ -120,6 +120,7 @@ export class NativeSessionPort {
   }
 
   async snapshot(sessionId) {
+    const rootIdentity = this.ctx.agents.get(sessionId);
     const projections = await this.projections(sessionId);
     if (projections === null) throw new TeamError('SESSION_MISSING', 'The native Session is absent; no replacement was created.');
     if (projections.kind !== 'sequenced') throw new TeamError('MIGRATION_REQUIRED', 'The native Session requires an explicit supported migration.');
@@ -133,7 +134,7 @@ export class NativeSessionPort {
     const liveRoster = agent === undefined ? null : this.ctx.agentTeams.listMembers(agent);
     const members = [];
     const cuts = new Map([[sessionId, projections.asOfSeq]]);
-    const identities = new Map([[sessionId, agent]]);
+    const identities = new Map([[sessionId, rootIdentity]]);
     for (const member of team?.members ?? []) {
       const native = liveRoster?.find(row => row.id === member.id);
       const live = this.ctx.agents.get(member.id);
