@@ -1,6 +1,6 @@
 # Native Gateway refactor validation
 
-Validated on macOS with Node 26.0.0 and the exact official DSH 0.2.2-alpha.2 npm graph. All automated native fixtures use test-owned stores, bounded deterministic adapters and in-memory credential records. No live provider inference was performed.
+Published v0.6.0 was validated on macOS with Node 26.0.0 and the exact official DSH 0.2.2-alpha.2 npm graph. The unreleased 0.6.1 candidate on this branch (not tagged, released or published) was validated on macOS with Node 26.0.0 against the exact official DSH 0.2.2-alpha.3 npm graph, using a locally built archive installed in an isolated native profile. All automated native fixtures use test-owned stores, bounded deterministic adapters and in-memory credential records. No live provider inference was performed.
 
 - Unit regressions: role snapshots, native admission, immutable members, writer locks, create/input retry conflicts and uncertain reply windows, projection evidence and drain-before-disposal.
 - Native regressions: same-member follow-up, running queue/steer, Team interruption, configuration edits and cold/process-crash recovery, empty catalog inheritance and independent Web forks.

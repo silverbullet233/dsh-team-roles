@@ -43,7 +43,7 @@ try {
   const health = await call('health');
   assert.equal(health.ok, true); assert.equal(health.roles.configured, false);
   assert.equal(health.runtime.runtimeDirectory, runtime);
-  assert.equal(health.runtime.packageVersion, '0.2.2-alpha.2');
+  assert.equal(health.runtime.packageVersion, '0.2.2-alpha.3');
   const { until } = await import('./portable-stack.mjs');
   const nativeTeam = await call('create', { key: 'native-default', cwd: fixture.fixtureRoot, text: 'Synthetic unconfigured native Lead.' });
   const nativeLead = ctx.agents.get(nativeTeam.teamId);
