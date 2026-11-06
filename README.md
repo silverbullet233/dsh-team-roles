@@ -65,3 +65,5 @@ npm test
 ```
 
 Dependencies and tests use the released npm packages, with no running user DSH or provider credentials required. See [CONTRIBUTING.md](CONTRIBUTING.md) for native tests and release maintenance. Local integrations can use the [native Gateway API](docs/protocol.md).
+
+The unreleased 0.6.1 candidate also supports exact Codex launch permission profiles and inherited member approval policy. This requires the companion client's external trusted supervisor handoff; it does not auto-detect Codex permissions or certify OS confinement. See [candidate permission configuration](docs/configuration.md#candidate-codex-permission-profiles).

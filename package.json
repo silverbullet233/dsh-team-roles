@@ -44,7 +44,8 @@
     "runtime:verify": "node scripts/runtime/verify.mjs",
     "prepack": "node scripts/check-package.mjs",
     "build:release": "npm run build",
-    "test:release": "npm test"
+    "test:release": "npm test",
+    "test:isolated": "node scripts/test-isolated.mjs"
   },
   "files": [
     "src",
@@ -108,7 +109,8 @@
     "@deepseek-ai/dsh-workspace": "0.2.2-alpha.3",
     "@deepseek-ai/schemastery": "3.18.6-alpha.2",
     "@deepseek-ai/dsh-host-webserver": "0.2.2-alpha.3",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "@deepseek-ai/dsh-sandbox-policy": "0.2.2-alpha.3"
   },
   "license": "Apache-2.0",
   "repository": {
@@ -139,7 +141,9 @@
     "@deepseek-ai/dsh": "0.2.2-alpha.3",
     "@deepseek-ai/dsh-app-boot": "0.2.2-alpha.3",
     "@deepseek-ai/dsh-session-projection": "0.2.2-alpha.3",
-    "@deepseek-ai/dsh-web-frontend": "0.2.2-alpha.3"
+    "@deepseek-ai/dsh-web-frontend": "0.2.2-alpha.3",
+    "@deepseek-ai/dsh-sandbox-policy": "0.2.2-alpha.3",
+    "@deepseek-ai/dsh-user-approval": "0.2.2-alpha.3"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-agent": {
@@ -191,6 +195,12 @@
       "optional": true
     },
     "@deepseek-ai/dsh-web-frontend": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-sandbox-policy": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-user-approval": {
       "optional": true
     }
   }

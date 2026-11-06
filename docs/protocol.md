@@ -110,3 +110,7 @@ The projection retains up to 16 unsettled identities and the latest result metad
 ## Durable upgrades
 
 The former `bridge` metadata directory and `dshBridge` Session projection key remain storage identities for existing receipts and histories. They do not enable the old transport. Role Lead reservations, member snapshots, Session storage and attachment storage retain their existing locations. Run one writer per Harness home/state directory.
+
+## Candidate exact permission profiles
+
+`create-permission-profile` adds optional `create.permissionProfile` with `sandboxMode`, native `approvalPolicy`, `writableRoots`, `networkAccess` and `binding`. The strict schema is shared by Web/Node descriptors. The create digest includes this intent; altered retries conflict. The response and status include the saved profile, separate from native `permissions` projections. Fresh roots are configured before admission, every send rechecks the durable intent and the final queue guard rechecks native policy after asynchronous preparation. Old/partial Teams are never upgraded on retry. `host.permissionBinding` in health is immutable launch metadata, not independent OS attestation. See [configuration](configuration.md#candidate-codex-permission-profiles) for the external trust boundary and network limitation.

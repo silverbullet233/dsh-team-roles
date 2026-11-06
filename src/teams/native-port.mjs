@@ -1,6 +1,10 @@
 /** Public native Session Remote calls and create-time permission services. */
 import { TeamError } from './errors.mjs';
-import { Session } from '@deepseek-ai/dsh-session';
+import { Session, appendPluginRecord } from '@deepseek-ai/dsh-session';
+import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy';
+import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval';
+import { validateProfile, verifyProfile } from './permission-profile.mjs';
+import { isDeepStrictEqual } from 'node:util';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { readTurnResult } from './turn-result.mjs';
 import { observeInput, unavailableInput } from './input-observation.mjs';
@@ -19,6 +23,8 @@ export class NativeSessionPort {
       if (!ctx[name]) throw new TeamError('CAPABILITY_MISSING', `Pinned native runtime requires ${name}.`);
     }
     this.ctx = ctx;
+    // Snapshot at startup; later env changes are not evidence of a changed process boundary.
+    this.permissionBinding = process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING ?? null;
     this.roles = roles;
     this.peer = ctx.connection.createPeer({ principal: { kind: 'owner' }, interactions: 'none' });
   }
@@ -76,13 +82,51 @@ export class NativeSessionPort {
   applyPermissionPreset(sessionId, intent) {
     const current = this.resolvePermissionPreset(intent.preset);
     if (current.sandboxMode !== intent.sandboxMode || current.approvalPolicy !== intent.approvalPolicy) throw new TeamError('PERMISSION_MISMATCH', 'Native preset definition changed before initialization.');
+    this.assertFreshLead(sessionId);
+    const session = this.ctx.sessions.get(sessionId);
+    this.permissionServices(true).presets.set(session, intent.preset);
+  }
+  assertFreshLead(sessionId) {
     const session = this.ctx.sessions.get(sessionId), agent = this.ctx.agents.get(sessionId);
     if (!session || agent?.session !== session || agent.status !== 'idle' || session.header.parentSession || session.header.isSeeded || session.firstLiveSeq !== 0
       || agent.inbox.nextTurn.length || agent.inbox.nextStep.length || this.ctx.agentTeams.listMembers(agent).some(member => member.id !== sessionId)
       || session.snapshotEvents().some(event => ['turn/start', 'user/message', 'assistant/message', 'tool/call'].includes(event.type))) {
       throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', 'Permission presets may only be applied to a fresh blank Lead before any task or member.');
     }
-    this.permissionServices(true).presets.set(session, intent.preset);
+  }
+  resolvePermissionProfile(value, cwd) {
+    const profile = validateProfile(value);
+    if (profile.binding !== this.permissionBinding) throw new TeamError('HOST_PERMISSION_MISMATCH', 'This host has a different or unknown launch boundary.');
+    const services = this.permissionServices(true);
+    const roots = [...new Set([cwd, ...(services.sandbox.additionalWritableRoots ?? [])])].sort();
+    if (profile.sandboxMode === 'workspace-write' && !isDeepStrictEqual(roots, profile.writableRoots)) throw new TeamError('PERMISSION_MISMATCH', 'Host writable roots do not match the requested boundary; configure a separate owned host.');
+    return profile;
+  }
+  applyPermissionProfile(sessionId, profile) {
+    this.assertFreshLead(sessionId);
+    const session = this.ctx.sessions.get(sessionId);
+    setSandboxMode(session, profile.sandboxMode);
+    setApprovalPolicy(session, profile.approvalPolicy);
+  }
+  /** Awaited agent/created hook, before native queued work can run. Never rewrite restored children. */
+  async inheritPermissions(agent, store) {
+    const parentId = agent.session.header.parentSession;
+    if (!parentId) return;
+    const record = await store.get('team', parentId);
+    if (!record?.permissionProfile) return;
+    const profile = this.resolvePermissionProfile(record.permissionProfile, record.cwd);
+    const marker = 'plugin:dsh-team-roles/permission-profile';
+    const events = agent.session.snapshotEvents().filter(event => event.seq >= agent.session.inheritedEventCount);
+    const saved = events.find(event => event.type === marker);
+    if (!saved) {
+      if (agent.session.firstLiveSeq !== 0 || agent.session.header.isSeeded || events.some(event => ['turn/start', 'user/message', 'assistant/message', 'tool/call'].includes(event.type))) throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', 'A restored member has no verified inherited permission profile.');
+      verifyProfile(profile, await this.permissionSnapshot(parentId));
+      setSandboxMode(agent.session, profile.sandboxMode);
+      setApprovalPolicy(agent.session, profile.approvalPolicy);
+      appendPluginRecord(agent.session, marker, profile);
+      await this.ctx.sessions.flush(agent.session);
+    } else if (!isDeepStrictEqual(saved.data, profile)) throw new TeamError('PERMISSION_MISMATCH', 'Saved member permission intent differs from the Team.');
+    verifyProfile(profile, this.permissionsOf(agent.session));
   }
   workspacePath(id) {
     const workspace = this.ctx.workspaceRegistry?.get(id);
