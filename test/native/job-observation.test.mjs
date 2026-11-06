@@ -51,6 +51,11 @@ test('native Job observations filter owners, preserve model output and stay pass
   const settled = await host.client.request('jobs', { teamId: first.teamId });
   assert.equal(settled.counts.running, 0); assert.equal(settled.counts.completed, 2);
   await host.ctx.agentTeams.interrupt(lead, 'worker'); await child.whenIdle();
+  // Loop idle precedes subagent owner-scope disposal. Its Job cleanup must
+  // finish before disposing the containing host and the Jobs service together.
+  await until(() => host.ctx.agents.get(child.id) === undefined
+    && host.ctx.agentTeams.listMembers(lead).some(member => member.id === child.id && member.status === 'inactive')
+    && lead.status === 'idle', { description: 'interrupted child owner scope to unload' });
   await host.ctx.sessions.flush(lead.session);
   // Cordis effect disposal is asynchronous. Starting host disposal before the
   // controller detachment settles can strand the remaining native teardown.
