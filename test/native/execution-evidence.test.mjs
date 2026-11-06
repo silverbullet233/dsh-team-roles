@@ -11,7 +11,7 @@ async function fixture(t, options = {}) {
   const detach = host.ctx.jobs.attachController('synthetic execution fixture'), handles = [];
   t.after(async () => {
     for (const handle of handles) handle.done.resolve({ status: 'killed' });
-    await host.client.close(); detach(); await host.dispose(); await rm(root, { recursive: true, force: true });
+    await host.client.close(); await detach(); await host.dispose(); await rm(root, { recursive: true, force: true });
   });
   const created = await host.client.request('create', { key: 'execution', cwd: host.fixtureRoot, text: 'Synthetic Lead fixture.' });
   const lead = host.ctx.agents.get(created.teamId);

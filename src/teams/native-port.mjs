@@ -112,6 +112,14 @@ export class NativeSessionPort {
   async inheritPermissions(agent, store) {
     const parentId = agent.session.header.parentSession;
     if (!parentId) return;
+    const parent = this.ctx.agents.get(parentId);
+    const membership = this.ctx.agentTeams.tryMembership(agent);
+    const delegated = agent.session.header.origin === 'subagent'
+      || (parent !== undefined && this.ctx.agents.isOwnedBy(agent.id, parent));
+    const teammate = membership?.role === 'teammate' && membership.root.id === parentId;
+    // parentSession also describes independent native Web forks. It is history
+    // ancestry, not delegation authority; leave those ordinary Sessions alone.
+    if (!delegated && !teammate) return;
     const record = await store.get('team', parentId);
     if (!record?.permissionProfile) return;
     const profile = this.resolvePermissionProfile(record.permissionProfile, record.cwd);

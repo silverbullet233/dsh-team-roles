@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import PermissionPresets from '@deepseek-ai/dsh-permission-presets';
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy';
+import { buildForkSeed } from '@deepseek-ai/dsh-session/fork';
 import { NativeSessionPort } from '../../src/teams/native-port.mjs';
 import { mountNativeHost, until } from '../fixtures/native-harness.mjs';
 
@@ -42,7 +43,50 @@ test('exact inherited native policy is applied before first input and members re
   assert(marker); assert(marker.seq < events.find(event => event.type === 'turn/start').seq);
   assert.equal((await host.client.request('create', { ...params, permissionProfile: profile })).duplicate, true);
   host.ctx.sessions.get(created.teamId).append('approval/policy', { policy: 'never' });
+  const observed = await host.client.request('status', { teamId: created.teamId });
+  assert.equal(observed.permissions.approvalPolicy, 'never');
+  assert.equal(observed.permissionProfile.approvalPolicy, 'ask');
   await assert.rejects(host.client.request('send', { teamId: created.teamId, inputId: 'changed', text: 'Must not run' }), error => error.code.endsWith('PERMISSION_MISMATCH'));
+});
+
+test('an independent native Web fork of a profiled Team stays ordinary through creation and cold activation', { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const created = await f.host.client.request('create', { ...f.params, permissionProfile: f.profile });
+  const lead = f.host.ctx.agents.get(created.teamId); await lead.whenIdle();
+  const forked = await f.host.ctx.sessionController.fork({ sessionId: lead.id });
+  const fork = f.host.ctx.agents.get(forked.sessionId);
+  assert(fork); assert.equal(fork.session.header.parentSession, undefined);
+  assert.notEqual(fork.session.header.origin, 'subagent');
+  assert.equal(f.host.ctx.agents.isOwnedBy(fork.id, lead), false);
+  assert.equal(f.host.ctx.agentTeams.tryMembership(fork)?.role, 'lead');
+  assert.equal(await f.host.ctx.dshRoles.bindingFor(fork), null);
+  const marker = 'plugin:dsh-team-roles/permission-profile';
+  const ownMarkers = agent => agent.session.snapshotEvents().filter(event => event.seq >= agent.session.inheritedEventCount && event.type === marker);
+  assert.deepEqual(ownMarkers(fork), []);
+  await f.host.ctx.sessionController.prompt({ sessionId: fork.id, requestId: 'independent-fork', mode: 'queue', content: [{ type: 'text', text: 'Synthetic ordinary fork continuation.' }] }, new AbortController().signal);
+  await until(() => f.host.requests.some(request => request.sessionId === fork.id) && fork.status === 'idle');
+  await f.host.ctx.sessions.flush(fork.session);
+  // Also cover an independent seeded Session retaining ancestry metadata.
+  // The pinned SessionController.fork above clears parentSession; ancestry by
+  // itself must still never be treated as Team/delegation ownership.
+  const events = lead.session.snapshotEvents(), boundary = events.at(-1).seq;
+  const independentId = 'synthetic-seeded-ancestry';
+  await f.host.ctx.agents.create({ sessionId: independentId,
+    seed: buildForkSeed(events, boundary), inheritedEventCount: boundary + 1,
+    meta: { parentSession: lead.id, cwd: f.host.fixtureRoot, isSeeded: true },
+    agentOptions: { provider: 'fixture-lead', model: 'fixture-model' } });
+  const independent = f.host.ctx.agents.get(independentId);
+  assert(independent); assert.equal(independent.session.header.parentSession, lead.id);
+  assert.equal(f.host.ctx.agents.isOwnedBy(independent.id, lead), false);
+  assert.equal(await f.host.ctx.dshRoles.bindingFor(independent), null);
+  assert.deepEqual(ownMarkers(independent), []);
+  await f.host.ctx.sessions.flush(independent.session);
+  const next = await f.restart();
+  const resumed = await next.host.ctx.sessionController.resolveAgent(fork.id);
+  assert(resumed.agent); assert.equal(await next.host.ctx.dshRoles.bindingFor(resumed.agent), null);
+  assert.deepEqual(ownMarkers(resumed.agent), []);
+  const retainedAncestry = await next.host.ctx.sessionController.resolveAgent(independentId);
+  assert(retainedAncestry.agent); assert.deepEqual(ownMarkers(retainedAncestry.agent), []);
 });
 
 test('unknown or mismatching host launch bindings and writable roots are rejected before any native work', async t => {

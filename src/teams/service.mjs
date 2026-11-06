@@ -329,7 +329,10 @@ export class ManagedTeams {
     object(params, ['teamId']);
     const record = await this.record(params.teamId);
     const snapshot = await this.native.snapshot(params.teamId);
-    return { teamId: params.teamId, createdAt: record.createdAt, permissionProfile: record.permissionProfile ?? null, ...snapshot };
+    // Passive policy read for clients admitting interaction replies. The saved
+    // intent alone does not establish the current native sandbox or approval.
+    const permissions = await this.native.permissionSnapshot?.(params.teamId) ?? null;
+    return { teamId: params.teamId, createdAt: record.createdAt, permissionProfile: record.permissionProfile ?? null, ...snapshot, permissions };
   }
 
   async result(params) {
