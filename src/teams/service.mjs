@@ -92,7 +92,7 @@ export class ManagedTeams {
       case 'health': {
         object(params, []);
         const home = this.native.ctx.get?.('profileContext')?.home;
-        return { ok: true, api: { name: API_NAME, version: API_VERSION, capabilities: CAPABILITIES }, sourceSha: this.sourceSha, runtime: this.runtimeEvidence, roles: await this.native.catalog?.() ?? null, permissionPresets: await this.native.permissionCatalog?.() ?? null, transport: 'native-typert-gateway', service: 'native-session', modalities: ['text'], ownsExecution: false, host: { pid: process.pid, instanceId: process.env.DSH_OWNED_INSTANCE_ID ?? null, home: home ? await realpath(home) : null, permissionBinding: this.native.permissionBinding ?? null } };
+        return { ok: true, api: { name: API_NAME, version: API_VERSION, capabilities: CAPABILITIES }, sourceSha: this.sourceSha, runtime: this.runtimeEvidence, roles: await this.native.catalog?.() ?? null, permissionPresets: await this.native.permissionCatalog?.() ?? null, transport: 'native-typert-gateway', service: 'native-session', modalities: ['text'], ownsExecution: false, host: { pid: process.pid, instanceId: process.env.DSH_OWNED_INSTANCE_ID ?? null, home: home ? await realpath(home) : null, permissionBinding: this.native.permissionBinding ?? null, permissionExecution: structuredClone(this.native.permissionExecution ?? null) } };
       }
       case 'create': return this.create(params);
       case 'send': return this.send(params);

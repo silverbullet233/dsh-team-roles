@@ -25,6 +25,10 @@ export class NativeSessionPort {
     this.ctx = ctx;
     // Snapshot at startup; later env changes are not evidence of a changed process boundary.
     this.permissionBinding = process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING ?? null;
+    // Reporting a launch plan is not an OS probe. Freeze it at host startup so
+    // a later environment change cannot pretend to move the running process.
+    const execution = process.env.DSH_AGENT_TEAM_LAUNCH_EXECUTION;
+    this.permissionExecution = execution === undefined ? null : JSON.parse(execution);
     this.roles = roles;
     this.peer = ctx.connection.createPeer({ principal: { kind: 'owner' }, interactions: 'none' });
   }

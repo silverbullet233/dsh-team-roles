@@ -9,12 +9,14 @@ import { NativeSessionPort } from '../../src/teams/native-port.mjs';
 import { mountNativeHost, until } from '../fixtures/native-harness.mjs';
 
 const binding = 'a'.repeat(64);
-async function fixture(t) {
+async function fixture(t, execution) {
   const root = await mkdtemp('/tmp/dsh-profile-data-');
   const prior = process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING;
+  const priorExecution = process.env.DSH_AGENT_TEAM_LAUNCH_EXECUTION;
+  if (execution !== undefined) process.env.DSH_AGENT_TEAM_LAUNCH_EXECUTION = JSON.stringify(execution);
   process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING = binding;
   let host, port;
-  t.after(async () => { await port?.close(); await host?.dispose(); await rm(root, { recursive: true, force: true }); if (prior === undefined) delete process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING; else process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING = prior; });
+  t.after(async () => { await port?.close(); await host?.dispose(); await rm(root, { recursive: true, force: true }); if (prior === undefined) delete process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING; else process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING = prior; if (priorExecution === undefined) delete process.env.DSH_AGENT_TEAM_LAUNCH_EXECUTION; else process.env.DSH_AGENT_TEAM_LAUNCH_EXECUTION = priorExecution; });
   const mount = async () => {
     host = await mountNativeHost({ root });
     host.ctx.provide('shell', { sandboxMode: 'workspace-write' });
@@ -27,6 +29,14 @@ async function fixture(t) {
   const profile = { sandboxMode: 'workspace-write', approvalPolicy: 'ask', writableRoots: [host.fixtureRoot], networkAccess: 'restricted', binding };
   return { host, port, params, profile, restart: async () => { await port.close(); await host.dispose(); await mount(); return { host, port }; } };
 }
+
+test('health reports captured execution intent separately from native settings and later env changes', async t => {
+  const execution = { backend: 'codex-sandbox-host-v1', scope: 'entire-native-host', approval: 'native-ask', filesystem: 'launcher-required', network: 'opaque-state-only' };
+  const { host } = await fixture(t, execution);
+  assert.deepEqual((await host.client.request('health')).host.permissionExecution, execution);
+  process.env.DSH_AGENT_TEAM_LAUNCH_EXECUTION = JSON.stringify({ backend: 'native' });
+  assert.deepEqual((await host.client.request('health')).host.permissionExecution, execution);
+});
 
 test('exact inherited native policy is applied before first input and members retain parent approval instead of native never', async t => {
   const { host, port, params, profile } = await fixture(t);
@@ -47,6 +57,24 @@ test('exact inherited native policy is applied before first input and members re
   assert.equal(observed.permissions.approvalPolicy, 'never');
   assert.equal(observed.permissionProfile.approvalPolicy, 'ask');
   await assert.rejects(host.client.request('send', { teamId: created.teamId, inputId: 'changed', text: 'Must not run' }), error => error.code.endsWith('PERMISSION_MISMATCH'));
+});
+
+test('native-default unknown network and outer-launcher native projection preserve ask for members before queued work', async t => {
+  for (const mode of ['read-only', 'danger-full-access']) await t.test(mode, async t => {
+    const { host, port, params, profile } = await fixture(t);
+    const requested = { ...profile, sandboxMode: mode, writableRoots: [], networkAccess: 'unknown' };
+    const created = await host.client.request('create', { ...params, permissionProfile: requested });
+    assert.equal(created.permissionProfile.networkAccess, 'unknown');
+    const lead = host.ctx.agents.get(created.teamId); await lead.whenIdle();
+    const member = await host.ctx.dshRoles.spawn(lead, { name: 'worker', role: 'left', prompt: 'Synthetic unknown-network inherited policy.', signal: new AbortController().signal });
+    await until(() => host.requests.some(request => request.sessionId === member.member.id));
+    await host.ctx.agents.get(member.member.id)?.whenIdle();
+    const actual = await port.permissionSnapshot(member.member.id);
+    assert.equal(actual.sandbox.mode, mode);
+    assert.equal(actual.approvalPolicy, 'ask');
+    const events = (await host.ctx.sessionQuery.readSession(member.member.id)).events;
+    assert(events.find(event => event.type === 'plugin:dsh-team-roles/permission-profile').seq < events.find(event => event.type === 'turn/start').seq);
+  });
 });
 
 test('an independent native Web fork of a profiled Team stays ordinary through creation and cold activation', { timeout: 20000 }, async t => {
