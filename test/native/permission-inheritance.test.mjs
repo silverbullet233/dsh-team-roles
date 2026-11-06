@@ -9,7 +9,7 @@ import { NativeSessionPort } from '../../src/teams/native-port.mjs';
 import { mountNativeHost, until } from '../fixtures/native-harness.mjs';
 
 const binding = 'a'.repeat(64);
-async function fixture(t, execution) {
+async function fixture(t, execution, { emptyCatalog = false, onRequest } = {}) {
   const root = await mkdtemp('/tmp/dsh-profile-data-');
   const prior = process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING;
   const priorExecution = process.env.DSH_AGENT_TEAM_LAUNCH_EXECUTION;
@@ -18,10 +18,14 @@ async function fixture(t, execution) {
   let host, port;
   t.after(async () => { await port?.close(); await host?.dispose(); await rm(root, { recursive: true, force: true }); if (prior === undefined) delete process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING; else process.env.DSH_AGENT_TEAM_LAUNCH_PERMISSION_BINDING = prior; if (priorExecution === undefined) delete process.env.DSH_AGENT_TEAM_LAUNCH_EXECUTION; else process.env.DSH_AGENT_TEAM_LAUNCH_EXECUTION = priorExecution; });
   const mount = async () => {
-    host = await mountNativeHost({ root });
+    host = await mountNativeHost({ root, onRequest });
+    if (emptyCatalog) host.ctx.dshRoles.catalogSource = () => ({ leadRole: '', roles: {} });
+    await host.ctx.plugin(await import('@deepseek-ai/dsh-subagent-fork-in-process'), { providerName: 'fork' });
     host.ctx.provide('shell', { sandboxMode: 'workspace-write' });
     await host.ctx.plugin(SandboxPolicy, { mode: 'workspace-write', workspaceRoot: host.fixtureRoot });
     await host.ctx.plugin(PermissionPresets, {});
+    host.ctx.subagents.registerProvider({ name: 'empty-fork', capabilities: { agentOptions: true, depthLimit: true }, inheritsParentContext: true,
+      prepareContinuable: async () => ({ seed: [] }) });
     port = new NativeSessionPort(host.ctx, host.ctx.dshRoles);
   };
   await mount();
@@ -161,4 +165,67 @@ test('explicit preset must agree with the authorized exact native profile', asyn
   await assert.rejects(host.client.request('create', { ...params, permissionProfile: profile, permissionPreset: 'danger-full-access' }), error => error.code.endsWith('PERMISSION_MISMATCH'));
   const created = await host.client.request('create', { ...params, permissionProfile: full, permissionPreset: 'danger-full-access' });
   assert.equal(created.permissions.preset, 'danger-full-access'); assert.equal(created.permissions.approvalPolicy, 'never');
+});
+
+const permissionMarker = 'plugin:dsh-team-roles/permission-profile';
+const ownPolicy = session => session.snapshotEvents().filter(event => event.seq >= session.inheritedEventCount
+  && ['sandbox/mode', 'approval/policy', permissionMarker].includes(event.type));
+async function policySession(host, id, flush = false) {
+  const live = host.ctx.sessions.get(id);
+  if (live) { if (flush) await host.ctx.sessions.flush(live); return live; }
+  const saved = await host.ctx.sessionQuery.readSession(id);
+  return { inheritedEventCount: saved.inheritedEventCount, snapshotEvents: () => saved.events };
+}
+const startDelegated = (host, parent, childId, provider) => host.ctx.subagents.startActivation({
+  provider, childId, label: 'Synthetic permission inheritance regression.',
+  request: { parent, prompt: [{ type: 'text', text: 'Synthetic delegated work.' }], maxDepth: 4 },
+  signal: new AbortController().signal, delivery: 'caller',
+});
+for (const provider of ['spawn', 'fork', 'empty-fork']) test(`empty catalog ${provider} delegation verifies first and recursive children before work and on cold activation`, { timeout: 20000 }, async t => {
+  const seen = [];
+  const f = await fixture(t, undefined, { emptyCatalog: true, onRequest: (request, ctx) => {
+    const session = ctx.sessions.get(request.sessionId);
+    if (session.header.origin !== 'subagent') return;
+    const own = ownPolicy(session);
+    assert.equal(own.filter(event => event.type === permissionMarker).length, 1);
+    assert.equal(ctx.approval.overrideOf(session), 'ask');
+    assert.equal(ctx.sandboxPolicy.resolve({ session }).mode, 'read-only');
+    seen.push(request.sessionId);
+  } });
+  const profile = { ...f.profile, sandboxMode: 'read-only', writableRoots: [], networkAccess: 'unknown' };
+  const created = await f.host.client.request('create', { ...f.params, permissionProfile: profile });
+  let lead = f.host.ctx.agents.get(created.teamId); await lead.whenIdle();
+  const firstId = `synthetic-${provider}-first`, secondId = `synthetic-${provider}-second`;
+  await startDelegated(f.host, lead, firstId, provider);
+  await f.host.ctx.agents.get(firstId).whenIdle();
+  assert(f.host.requests.some(request => request.sessionId === firstId), JSON.stringify(f.host.ctx.sessions.get(firstId).snapshotEvents().slice(-5)));
+  assert(seen.includes(firstId), JSON.stringify(ownPolicy(f.host.ctx.sessions.get(firstId))));
+  let first = f.host.ctx.agents.get(firstId);
+  assert.equal(first.session.header.isSeeded, provider !== 'spawn');
+  await startDelegated(f.host, first, secondId, provider);
+  await f.host.ctx.agents.get(secondId).whenIdle();
+  assert(f.host.requests.some(request => request.sessionId === secondId), JSON.stringify(f.host.ctx.sessions.get(secondId).snapshotEvents().slice(-5)));
+  assert(seen.includes(secondId), JSON.stringify(ownPolicy(f.host.ctx.sessions.get(secondId))));
+  const before = new Map();
+  for (const id of [firstId, secondId]) {
+    const session = await policySession(f.host, id, true);
+    const own = ownPolicy(session); before.set(id, own);
+    assert.deepEqual(own.find(event => event.type === permissionMarker).data, profile);
+    assert(own.find(event => event.type === permissionMarker).seq < session.snapshotEvents().find(event => event.seq >= session.inheritedEventCount && event.type === 'turn/start').seq);
+  }
+  const next = await f.restart();
+  lead = (await next.host.ctx.sessionController.resolveAgent(created.teamId)).agent;
+  assert(lead);
+  const resume = async (parent, id) => {
+    await next.host.ctx.subagents.prompt({ parentSessionId: parent.id, childSessionId: id, mode: 'continuable', requestId: `resume-${id}`, delivery: 'queue', content: [{ type: 'text', text: 'Synthetic cold continuation.' }] }, new AbortController().signal);
+    await next.host.ctx.agents.get(id)?.whenIdle();
+    assert(next.host.requests.some(request => request.sessionId === id), JSON.stringify(next.host.ctx.sessions.get(id)?.snapshotEvents().slice(-5)));
+    const session = await policySession(next.host, id);
+    assert.deepEqual(ownPolicy(session), before.get(id));
+    return next.host.ctx.agents.get(id) ?? (await next.host.ctx.sessionController.resolveAgent(id)).agent;
+  };
+  first = await resume(lead, firstId);
+  await resume(first, secondId);
+  await next.host.ctx.subagents.drainChildren(first, [secondId]);
+  await next.host.ctx.subagents.drainChildren(lead, [firstId]);
 });

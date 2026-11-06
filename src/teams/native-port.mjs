@@ -112,32 +112,102 @@ export class NativeSessionPort {
     setSandboxMode(session, profile.sandboxMode);
     setApprovalPolicy(session, profile.approvalPolicy);
   }
-  /** Awaited agent/created hook, before native queued work can run. Never rewrite restored children. */
-  async inheritPermissions(agent, store) {
-    const parentId = agent.session.header.parentSession;
-    if (!parentId) return;
+  ownPermissionMarkers(session) {
+    return session.snapshotEvents().filter(event => event.seq >= session.inheritedEventCount
+      && event.type === 'plugin:dsh-team-roles/permission-profile');
+  }
+  permissionParent(session, agent) {
+    const parentId = session.header.parentSession;
+    if (!parentId) return undefined;
     const parent = this.ctx.agents.get(parentId);
-    const membership = this.ctx.agentTeams.tryMembership(agent);
-    const delegated = agent.session.header.origin === 'subagent'
-      || (parent !== undefined && this.ctx.agents.isOwnedBy(agent.id, parent));
-    const teammate = membership?.role === 'teammate' && membership.root.id === parentId;
-    // parentSession also describes independent native Web forks. It is history
-    // ancestry, not delegation authority; leave those ordinary Sessions alone.
-    if (!delegated && !teammate) return;
-    const record = await store.get('team', parentId);
-    if (!record?.permissionProfile) return;
-    const profile = this.resolvePermissionProfile(record.permissionProfile, record.cwd);
-    const marker = 'plugin:dsh-team-roles/permission-profile';
-    const events = agent.session.snapshotEvents().filter(event => event.seq >= agent.session.inheritedEventCount);
-    const saved = events.find(event => event.type === marker);
-    if (!saved) {
-      if (agent.session.firstLiveSeq !== 0 || agent.session.header.isSeeded || events.some(event => ['turn/start', 'user/message', 'assistant/message', 'tool/call'].includes(event.type))) throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', 'A restored member has no verified inherited permission profile.');
-      verifyProfile(profile, await this.permissionSnapshot(parentId));
+    const membership = agent && this.ctx.agentTeams.tryMembership(agent);
+    // Ancestry alone also describes independent Web forks. Native origin is
+    // durable across cold activation; exact runtime ownership covers Team children.
+    return session.header.origin === 'subagent'
+      || (agent && parent && this.ctx.agents.isOwnedBy(agent.id, parent))
+      || (membership?.role === 'teammate' && membership.root.id === parentId) ? parentId : undefined;
+  }
+  async permissionSession(id) {
+    const identity = runtimeIdentity(this.ctx, id);
+    let session = identity.registeredSession;
+    if (!session) {
+      const query = typeof this.ctx.get === 'function' ? this.ctx.get('sessionQuery') : this.ctx.sessionQuery;
+      if (!query?.readSession) throw new TeamError('CAPABILITY_MISSING', 'Native Session query is required to verify permission ancestry.');
+      const loaded = await query.readSession(id);
+      session = Session.create(id, loaded.events, loaded.session, loaded.inheritedEventCount, this.ctx.sessions.messageProjections);
+    }
+    return { id, session, identity };
+  }
+  /** Resolve genuine delegation all the way to its managed root, including cold parents. */
+  async permissionAncestry(agent, store) {
+    let parentId = this.permissionParent(agent.session, agent);
+    if (!parentId) {
+      if (this.ownPermissionMarkers(agent.session).length) throw new TeamError('PERMISSION_MISMATCH', 'Saved permission intent has no native delegation owner.');
+      return null;
+    }
+    const seen = new Set([agent.id]), ancestors = [];
+    while (parentId) {
+      if (seen.has(parentId) || seen.size > 128) throw new TeamError('PERMISSION_MISMATCH', 'Permission delegation ancestry is cyclic or exceeds the verification bound.');
+      seen.add(parentId);
+      const record = await store.get('team', parentId);
+      const state = await this.permissionSession(parentId);
+      ancestors.push(state);
+      if (record) {
+        if (record.sessionId !== parentId) throw new TeamError('PERMISSION_MISMATCH', 'Managed permission root identity conflicts with its record.');
+        if (record.permissionProfile !== undefined) {
+          if (record.stage !== 'created' || !record.permissions) throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', 'The managed root has no verified initial permissions.');
+          return { profile: this.resolvePermissionProfile(record.permissionProfile, record.cwd), record, ancestors };
+        }
+        break;
+      }
+      parentId = this.permissionParent(state.session, state.identity.agent);
+    }
+    if ([agent.session, ...ancestors.map(state => state.session)].some(session => this.ownPermissionMarkers(session).length)) {
+      throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', 'Saved inherited permission intent has no verified managed root.');
+    }
+    return null;
+  }
+  verifyPermissionAncestry({ profile, record, ancestors }) {
+    for (const [index, state] of ancestors.entries()) {
+      if (!sameRuntime(this.ctx, state.id, state.identity)) throw new TeamError('PERMISSION_MISMATCH', 'Permission ancestor changed during initialization.');
+      if (index < ancestors.length - 1) {
+        if (this.permissionParent(state.session, state.identity.agent) !== ancestors[index + 1].id) throw new TeamError('PERMISSION_MISMATCH', 'Native permission delegation ownership changed.');
+        this.verifyInheritedIntent(state.session, profile);
+      }
+      const actual = this.permissionsOf(state.session);
+      verifyProfile(profile, actual);
+      if (index === ancestors.length - 1 && !isDeepStrictEqual(actual.sandbox, record.permissions.sandbox)) throw new TeamError('PERMISSION_MISMATCH', 'Saved root native policy changed.');
+    }
+  }
+  verifyInheritedIntent(session, profile) {
+    const markers = this.ownPermissionMarkers(session);
+    if (!markers.length) throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', 'A delegated member has no verified inherited permission profile.');
+    if (markers.length !== 1 || !isDeepStrictEqual(markers[0].data, profile)) throw new TeamError('PERMISSION_MISMATCH', 'Saved member permission intent conflicts with the managed root.');
+  }
+  /** Awaited before queued work; only native fresh creation may establish new intent. */
+  async inheritPermissions(agent, store, source) {
+    const identity = runtimeIdentity(this.ctx, agent.id);
+    const ancestry = await this.permissionAncestry(agent, store);
+    if (!ancestry) return;
+    const { profile } = ancestry;
+    const verify = () => {
+      if (!sameRuntime(this.ctx, agent.id, identity)) throw new TeamError('PERMISSION_MISMATCH', 'Member changed during permission initialization.');
+      if (this.permissionParent(agent.session, agent) !== ancestry.ancestors[0].id) throw new TeamError('PERMISSION_MISMATCH', 'Native member ownership changed during initialization.');
+      this.verifyPermissionAncestry(ancestry);
+    };
+    verify(); // No await between current ancestry checks and policy writes.
+    if (!this.ownPermissionMarkers(agent.session).length) {
+      const liveEvents = agent.session.snapshotEvents().filter(event => event.seq >= agent.session.firstLiveSeq);
+      // A fresh native fork has a seed (and synthetic closers), but no own work.
+      // source is the native factory lifecycle discriminator, never header inference.
+      if (source !== 'startup' || liveEvents.some(event => ['turn/start', 'user/message', 'assistant/message', 'tool/call'].includes(event.type))) throw new TeamError('PERMISSION_INITIALIZATION_INCOMPLETE', 'A restored or already working member has no verified inherited permission profile.');
       setSandboxMode(agent.session, profile.sandboxMode);
       setApprovalPolicy(agent.session, profile.approvalPolicy);
-      appendPluginRecord(agent.session, marker, profile);
+      appendPluginRecord(agent.session, 'plugin:dsh-team-roles/permission-profile', profile);
       await this.ctx.sessions.flush(agent.session);
-    } else if (!isDeepStrictEqual(saved.data, profile)) throw new TeamError('PERMISSION_MISMATCH', 'Saved member permission intent differs from the Team.');
+      verify();
+    }
+    this.verifyInheritedIntent(agent.session, profile);
     verifyProfile(profile, this.permissionsOf(agent.session));
   }
   workspacePath(id) {
