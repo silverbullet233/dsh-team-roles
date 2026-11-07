@@ -63,10 +63,10 @@ test('exact inherited native policy is applied before first input and members re
   await assert.rejects(host.client.request('send', { teamId: created.teamId, inputId: 'changed', text: 'Must not run' }), error => error.code.endsWith('PERMISSION_MISMATCH'));
 });
 
-test('native-default unknown network and outer-launcher native projection preserve ask for members before queued work', async t => {
-  for (const mode of ['read-only', 'danger-full-access']) await t.test(mode, async t => {
+test('full-access fallback and outer-launcher projection preserve their exact approval before member work', async t => {
+  for (const [mode, approvalPolicy] of [['read-only', 'ask'], ['danger-full-access', 'ask'], ['danger-full-access', 'never']]) await t.test(`${mode}/${approvalPolicy}`, async t => {
     const { host, port, params, profile } = await fixture(t);
-    const requested = { ...profile, sandboxMode: mode, writableRoots: [], networkAccess: 'unknown' };
+    const requested = { ...profile, sandboxMode: mode, approvalPolicy, writableRoots: [], networkAccess: 'unknown' };
     const created = await host.client.request('create', { ...params, permissionProfile: requested });
     assert.equal(created.permissionProfile.networkAccess, 'unknown');
     const lead = host.ctx.agents.get(created.teamId); await lead.whenIdle();
@@ -75,7 +75,7 @@ test('native-default unknown network and outer-launcher native projection preser
     await host.ctx.agents.get(member.member.id)?.whenIdle();
     const actual = await port.permissionSnapshot(member.member.id);
     assert.equal(actual.sandbox.mode, mode);
-    assert.equal(actual.approvalPolicy, 'ask');
+    assert.equal(actual.approvalPolicy, approvalPolicy);
     const events = (await host.ctx.sessionQuery.readSession(member.member.id)).events;
     assert(events.find(event => event.type === 'plugin:dsh-team-roles/permission-profile').seq < events.find(event => event.type === 'turn/start').seq);
   });
@@ -181,18 +181,20 @@ const startDelegated = (host, parent, childId, provider) => host.ctx.subagents.s
   request: { parent, prompt: [{ type: 'text', text: 'Synthetic delegated work.' }], maxDepth: 4 },
   signal: new AbortController().signal, delivery: 'caller',
 });
-for (const provider of ['spawn', 'fork', 'empty-fork']) test(`empty catalog ${provider} delegation verifies first and recursive children before work and on cold activation`, { timeout: 20000 }, async t => {
+for (const [mode, approvalPolicy] of [['read-only', 'ask'], ['danger-full-access', 'never']])
+for (const provider of ['spawn', 'fork', 'empty-fork']) test(`empty catalog ${provider} ${mode}/${approvalPolicy} delegation verifies first and recursive children before work and on cold activation`, { timeout: 20000 }, async t => {
   const seen = [];
-  const f = await fixture(t, undefined, { emptyCatalog: true, onRequest: (request, ctx) => {
+  const execution = { backend: 'native', source: mode === 'danger-full-access' ? 'full-access-fallback' : 'explicit-configuration', ...(mode === 'danger-full-access' ? { fallbackReason: 'sandbox-metadata-unavailable' } : {}), filesystem: 'native-policy', network: 'unverified', approval: 'native-policy' };
+  const f = await fixture(t, execution, { emptyCatalog: true, onRequest: (request, ctx) => {
     const session = ctx.sessions.get(request.sessionId);
+    assert.equal(ctx.approval.overrideOf(session), approvalPolicy);
+    assert.equal(ctx.sandboxPolicy.resolve({ session }).mode, mode);
     if (session.header.origin !== 'subagent') return;
     const own = ownPolicy(session);
     assert.equal(own.filter(event => event.type === permissionMarker).length, 1);
-    assert.equal(ctx.approval.overrideOf(session), 'ask');
-    assert.equal(ctx.sandboxPolicy.resolve({ session }).mode, 'read-only');
     seen.push(request.sessionId);
   } });
-  const profile = { ...f.profile, sandboxMode: 'read-only', writableRoots: [], networkAccess: 'unknown' };
+  const profile = { ...f.profile, sandboxMode: mode, approvalPolicy, writableRoots: [], networkAccess: 'unknown' };
   const created = await f.host.client.request('create', { ...f.params, permissionProfile: profile });
   let lead = f.host.ctx.agents.get(created.teamId); await lead.whenIdle();
   const firstId = `synthetic-${provider}-first`, secondId = `synthetic-${provider}-second`;
@@ -214,6 +216,7 @@ for (const provider of ['spawn', 'fork', 'empty-fork']) test(`empty catalog ${pr
     assert(own.find(event => event.type === permissionMarker).seq < session.snapshotEvents().find(event => event.seq >= session.inheritedEventCount && event.type === 'turn/start').seq);
   }
   const next = await f.restart();
+  assert.deepEqual((await next.host.client.request('health')).host.permissionExecution, execution);
   lead = (await next.host.ctx.sessionController.resolveAgent(created.teamId)).agent;
   assert(lead);
   const resume = async (parent, id) => {
