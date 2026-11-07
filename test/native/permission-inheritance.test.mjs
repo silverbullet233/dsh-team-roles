@@ -170,9 +170,10 @@ test('explicit preset must agree with the authorized exact native profile', asyn
 const permissionMarker = 'plugin:dsh-team-roles/permission-profile';
 const ownPolicy = session => session.snapshotEvents().filter(event => event.seq >= session.inheritedEventCount
   && ['sandbox/mode', 'approval/policy', permissionMarker].includes(event.type));
-async function policySession(host, id, flush = false) {
-  const live = host.ctx.sessions.get(id);
-  if (live) { if (flush) await host.ctx.sessions.flush(live); return live; }
+async function policySession(host, id) {
+  // The production hook flushes policy before model work. SessionQuery owns
+  // live/cold observation; a borrowed live handle can already be closing after
+  // whenIdle(), so an extra consumer flush races native child disposal.
   const saved = await host.ctx.sessionQuery.readSession(id);
   return { inheritedEventCount: saved.inheritedEventCount, snapshotEvents: () => saved.events };
 }
@@ -210,7 +211,7 @@ for (const provider of ['spawn', 'fork', 'empty-fork']) test(`empty catalog ${pr
   assert(seen.includes(secondId), JSON.stringify(ownPolicy(f.host.ctx.sessions.get(secondId))));
   const before = new Map();
   for (const id of [firstId, secondId]) {
-    const session = await policySession(f.host, id, true);
+    const session = await policySession(f.host, id);
     const own = ownPolicy(session); before.set(id, own);
     assert.deepEqual(own.find(event => event.type === permissionMarker).data, profile);
     assert(own.find(event => event.type === permissionMarker).seq < session.snapshotEvents().find(event => event.seq >= session.inheritedEventCount && event.type === 'turn/start').seq);
