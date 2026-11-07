@@ -8,7 +8,11 @@ npm run build
 npm test
 ```
 
-All native dependencies come from the exact supported npm release, `0.2.2-alpha.2`. No DSH source checkout, connector, patched compiler or global dependency install is needed. `npm test` runs unit, native integration, runtime-capability and release-safety tests with isolated synthetic fixtures. It does not use provider credentials or paid inference. Optional [credential helpers](docs/auth.md) preserve native authentication.
+All native dependencies on this branch come from the exact supported npm release for the **unreleased 0.6.1 candidate**, `0.2.2-alpha.3`. The published v0.6.0 archive was built and validated against `0.2.2-alpha.2` and remains unchanged. No DSH source checkout, connector, patched compiler or global dependency install is needed. `npm test` runs unit, native integration, runtime-capability and release-safety tests with isolated synthetic fixtures. It does not use provider credentials or paid inference. Optional [credential helpers](docs/auth.md) preserve native authentication.
+
+## Version policy for the candidate
+
+The candidate bump from 0.6.0 to 0.6.1 is not a release. This branch is **not tagged, has no GitHub Release assets and is not published to npm**; do not claim a release URL, asset digest or tag for it. Before publication, a maintainer must approve the candidate, the version must match `package.json`, the lockfile and this documentation, and the documented checks must pass on the tagged commit. Update the published installation pins only after the release assets exist and are verified.
 
 ## Package validation
 
@@ -16,7 +20,7 @@ All native dependencies come from the exact supported npm release, `0.2.2-alpha.
 mkdir -p dist/release
 npm pack --dry-run
 npm pack --pack-destination dist/release
-node scripts/release/check-tarball.mjs dist/release/dsh-team-roles-0.6.0.tgz
+node scripts/release/check-tarball.mjs dist/release/dsh-team-roles-0.6.1.tgz
 ```
 
 The check validates package contents and writes `SHA256SUMS`. For native install/load acceptance, run `node scripts/test-portable-package.mjs ./node_modules/@deepseek-ai/dsh <built-tarball>`; it creates a temporary profile and performs no paid inference.

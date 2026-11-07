@@ -18,9 +18,12 @@ export class TeamRoleSettings extends TypertRemoteService {
     // ConfigEditor invokes this synchronous hook before its atomic write. Only
     // the currently accepted catalog or the exact asynchronously checked save
     // may cross that boundary; raw Settings writes cannot skip route validation.
+    // Cordis >=4.0.6-alpha.2 passes the fiber as the first listener argument
+    // (`waterfall('internal/config', fiber, ...)`); earlier alpha.1 passed it as
+    // the dispatch receiver. Read the fiber argument so the guard still applies.
     const service = this;
-    hostContext.on('internal/config', function (_raw, next) {
-      if (this !== hostContext.fiber) return next();
+    hostContext.on('internal/config', function (fiber, next) {
+      if (fiber !== hostContext.fiber) return next();
       const candidate = next();
       const value = candidate.catalog?.get?.() ?? candidate.catalog;
       catalogValue(value, { allowUnconfigured: true });

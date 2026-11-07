@@ -46,6 +46,7 @@ export async function apply(ctx, config) {
   try {
     native = new NativeSessionPort(ctx, ctx.dshRoles);
     teams = new ManagedTeams({ native, store, allowedRoots: config.allowedRoots, sourceSha: runtimeEvidence.sourceSha, runtimeEvidence });
+    ctx.on('agent/created', ({ agent, source }) => native.inheritPermissions(agent, store, source), { global: true });
     // Fence every native HTTP API writer while the owner requests safe shutdown.
     // Existing work and the ordinary Web host remain native runtime concerns.
     ctx.on('connection/request', async (_request, response, next) => {

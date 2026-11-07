@@ -159,13 +159,18 @@ test('completed cold history permits host shutdown and an expired shutdown lease
 test('shutdown guards real native Jobs after the owning Agent becomes idle', { timeout: 15000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-shutdown-jobs-'));
   const host = await mountNativeHost({ root });
-  t.after(async () => { await host.client.close(); await host.dispose(); await rm(root, { recursive: true, force: true }); });
-  const detach = host.ctx.jobs.attachController('synthetic shutdown fixture');
-  t.after(detach);
+  const completions = [];
+  let detach;
+  t.after(async () => {
+    for (const done of completions) done.resolve({ status: 'killed' });
+    await detach?.(); await host.client.close(); await host.dispose(); await rm(root, { recursive: true, force: true });
+  });
+  detach = host.ctx.jobs.attachController('synthetic shutdown fixture');
   const created = await host.client.request('create', { key: 'idle-with-job', cwd: host.fixtureRoot, text: 'Synthetic completion.' });
   await host.ctx.agents.get(created.teamId).whenIdle();
   for (const owner of [undefined, created.teamId]) {
     const done = Promise.withResolvers();
+    completions.push(done);
     const id = host.ctx.jobs.start({ kind: 'fixture', label: 'Synthetic deferred Job', ...(owner === undefined ? {} : { owner }), run: () => ({ done: done.promise, cancel: () => done.resolve({ status: 'killed' }) }) });
     assert.equal(host.ctx.agents.get(created.teamId).status, 'idle');
     assert.equal((await host.client.request('prepareShutdown')).safeToStop, false);
