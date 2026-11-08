@@ -8,8 +8,14 @@ import { mountNativeHost, textChunks, until } from '../fixtures/native-harness.m
 test('native Job observations filter owners, preserve model output and stay passive after restart', { timeout: 15000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-job-observation-'));
   let host = await mountNativeHost({ root, respond: options => options.provider === 'fixture-left' ? 'hang' : textChunks('SYNTHETIC_COMPLETE') });
-  t.after(async () => { await host.client.close(); await host.dispose(); await rm(root, { recursive: true, force: true }); });
-  const detach = host.ctx.jobs.attachController('synthetic observation fixture');
+  const handles = [];
+  let detach;
+  t.after(async () => {
+    for (const handle of handles) handle.done.resolve({ status: 'killed' });
+    await detach?.();
+    await host.client.close(); await host.dispose(); await rm(root, { recursive: true, force: true });
+  });
+  detach = host.ctx.jobs.attachController('synthetic observation fixture');
   const first = await host.client.request('create', { key: 'job-team', cwd: host.fixtureRoot, text: 'Synthetic completed Lead.' });
   const lead = host.ctx.agents.get(first.teamId); await lead.whenIdle();
   const initial = await host.client.request('jobs', { teamId: first.teamId });
@@ -19,7 +25,6 @@ test('native Job observations filter owners, preserve model output and stay pass
   const child = host.ctx.agents.get(spawned.member.id);
   const other = await host.client.request('create', { key: 'other-team', cwd: host.fixtureRoot, text: 'Synthetic unrelated Lead.' });
   await host.ctx.agents.get(other.teamId).whenIdle();
-  const handles = [];
   for (const owner of [first.teamId, spawned.member.id, other.teamId, undefined]) {
     const done = Promise.withResolvers();
     const id = host.ctx.jobs.start({ kind: 'fixture', label: 'excluded fixture command', ...(owner === undefined ? {} : { owner }), run(handle) {
@@ -46,8 +51,15 @@ test('native Job observations filter owners, preserve model output and stay pass
   const settled = await host.client.request('jobs', { teamId: first.teamId });
   assert.equal(settled.counts.running, 0); assert.equal(settled.counts.completed, 2);
   await host.ctx.agentTeams.interrupt(lead, 'worker'); await child.whenIdle();
+  // Loop idle precedes subagent owner-scope disposal. Its Job cleanup must
+  // finish before disposing the containing host and the Jobs service together.
+  await until(() => host.ctx.agents.get(child.id) === undefined
+    && host.ctx.agentTeams.listMembers(lead).some(member => member.id === child.id && member.status === 'inactive')
+    && lead.status === 'idle', { description: 'interrupted child owner scope to unload' });
   await host.ctx.sessions.flush(lead.session);
-  await host.client.close(); detach(); await host.dispose();
+  // Cordis effect disposal is asynchronous. Starting host disposal before the
+  // controller detachment settles can strand the remaining native teardown.
+  await host.client.close(); await detach(); await host.dispose();
   host = await mountNativeHost({ root });
   const cold = await host.client.request('jobs', { teamId: first.teamId });
   assert.equal(cold.available, true); assert.equal(cold.jobs.length, 0);

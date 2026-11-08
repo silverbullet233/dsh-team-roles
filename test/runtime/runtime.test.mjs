@@ -6,12 +6,12 @@ const native = async () => {
  return {agent,controller,team,projections,boot,reflection};
 };
 test('the supported official npm runtime exposes matching APIs, reflection and Web assets', async () => {
- const result=await verifyRuntime();assert.equal(result.packageVersion,'0.2.2-alpha.2');assert.equal(result.sourceSha,null);assert.equal(result.build.kind,'official-npm-release');assert.equal(result.capabilities.generatedReflection,true);
+ const result=await verifyRuntime();assert.equal(result.packageVersion,'0.2.2-alpha.3');assert.equal(result.sourceSha,null);assert.equal(result.build.kind,'official-npm-release');assert.equal(result.capabilities.generatedReflection,true);
  assert.match(result.resolvedModules.sessionReflection,/dsh-api-session-controller\/lib\/typert.host.js$/);
 });
 test('only the exact validated release version is accepted', () => {
- requireSupportedVersion('0.2.2-alpha.2');
- for(const version of ['0.2.1-rc.3','0.2.1-rc.4','0.2.2-alpha.3','0.2.2']) assert.throws(()=>requireSupportedVersion(version),/unsupported/);
+ requireSupportedVersion('0.2.2-alpha.3');
+ for(const version of ['0.2.1-rc.3','0.2.1-rc.4','0.2.1-rc.5','0.2.2-alpha.2','0.2.2-rc.1','0.2.2','not-a-version']) assert.throws(()=>requireSupportedVersion(version),/unsupported/);
 });
 test('missing public model-selection APIs fail with an actionable capability name', async () => {
  const modules=await native();
@@ -27,9 +27,9 @@ test('a profile cannot use a different CLI version or bypass installation module
  const { mkdtemp,writeFile,rm }=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
  const root=await mkdtemp(join(tmpdir(),'dsh-release-anchor-'));const anchor=join(root,'package.json');
  try {
-  await writeFile(anchor,JSON.stringify({name:'@deepseek-ai/dsh',version:'0.2.1-rc.4'}));
-  await assert.rejects(verifyRuntime({context:{get:name=>name==='profileContext'?{installAnchor:anchor}:undefined}}),{code:'DSH_RUNTIME_INCOMPATIBLE'});
   await writeFile(anchor,JSON.stringify({name:'@deepseek-ai/dsh',version:'0.2.2-alpha.2'}));
+  await assert.rejects(verifyRuntime({context:{get:name=>name==='profileContext'?{installAnchor:anchor}:undefined}}),{code:'DSH_RUNTIME_INCOMPATIBLE'});
+  await writeFile(anchor,JSON.stringify({name:'@deepseek-ai/dsh',version:'0.2.2-alpha.3'}));
   await assert.rejects(verifyRuntime({context:{get:name=>name==='profileContext'?{installAnchor:anchor}:{packageOf:()=>({dir:root})}}}),/differs from the serving installation/);
  } finally {await rm(root,{recursive:true,force:true});}
 });
@@ -42,7 +42,7 @@ test('profile dependency identity is checked from the actual plugin importer, wi
   callers.push(caller);
   return { dir: dirname(fileURLToPath(import.meta.resolve(`${pkg}/package.json`))) };
  } } } });
- assert.equal(result.packageVersion, '0.2.2-alpha.2');
+ assert.equal(result.packageVersion, '0.2.2-alpha.3');
  assert(callers.length > 5);
  assert(callers.every(caller => caller.endsWith('/scripts/runtime/verify.mjs')));
 });

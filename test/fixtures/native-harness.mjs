@@ -19,6 +19,19 @@ export function toolChunks(name, args, id = 'synthetic-call') {
   return [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: serialized }, { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: serialized } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 }
 
+/** Fixture gates must not keep native disposal waiting after a failed test. */
+async function abortable(operation, signal) {
+  signal?.throwIfAborted();
+  if (!signal) return operation();
+  let cancel;
+  const cancelled = new Promise((_, reject) => {
+    cancel = () => reject(signal.reason ?? new Error('Synthetic adapter cancelled.'));
+    signal.addEventListener('abort', cancel, { once: true });
+  });
+  try { return await Promise.race([Promise.resolve().then(operation), cancelled]); }
+  finally { signal.removeEventListener('abort', cancel); }
+}
+
 /** Wait for a native condition; the timer bounds a state observation rather than deciding it. */
 export async function until(check, { timeout = 10000, description = 'native state' } = {}) {
   const deadline = Date.now() + timeout;
@@ -64,8 +77,8 @@ export async function mountNativeHost({ root, roles = fixtureRoles, respond = ()
       async *stream(options) {
         await audit(options);
         requests.push(options);
-        await onRequest?.(options, ctx);
-        const response = await respond(options, ctx);
+        await abortable(() => onRequest?.(options, ctx), options.signal);
+        const response = await abortable(() => respond(options, ctx), options.signal);
         if (response === 'hang') {
           if (options.signal?.aborted) throw options.signal.reason;
           await once(options.signal, 'abort');
