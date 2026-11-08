@@ -3,7 +3,7 @@
 Supported runtimes:
 
 - Published **v0.6.0** archive: official npm **`@deepseek-ai/dsh@0.2.2-alpha.2`**.
-- **Unreleased 0.6.1 candidate** (this branch, not tagged or published): official npm **`@deepseek-ai/dsh@0.2.2-alpha.3`**.
+- Published **v0.6.1** archive: official npm **`@deepseek-ai/dsh@0.2.2-alpha.3`**.
 
 The matching released package graph, reflection and Web assets are required. Earlier `0.2.1-rc.3`, `rc.4` and `rc.5` lack `agent.model.select/current`; later versions need separate compatibility validation.
 Use the official Web/base profile and `@deepseek-ai/dsh-experimental-agent-team-profile`. These profiles supply the required entries and transitive dependencies:
