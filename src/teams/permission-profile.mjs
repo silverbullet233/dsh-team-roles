@@ -1,5 +1,5 @@
-/** Exact caller-selected native intent, including explicit full-access fallback.
- * Source/reason live in the captured launch binding/execution, not inferred from
+/** Exact caller-selected native intent, including the companion full-access default.
+ * Source lives in the captured launch binding/execution, not inferred from
  * this tuple. Native full access grants no outer OS or network privileges. */
 import { isAbsolute } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';

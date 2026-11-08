@@ -1,6 +1,6 @@
 # Scoped permission acceptance — 2026-11-08 UTC
 
-**Historical hashes:** the later network-default follow-up requests enabled network intent and identifies filesystem/network/native-approval sources separately. The run below predates that follow-up; it is not a new provider acceptance for the later head.
+**Historical hashes:** this run exercised the former metadata/launcher implementation at the exact hashes below. The current product defaults to DSH native full access and does not automatically inherit Codex permissions. This report is not provider acceptance for that later implementation.
 
 This is a bounded, completed real-provider integration check on macOS. It supplements the synthetic suites; it does not certify complete Codex permission inheritance. The candidates remain **unreleased**: no tag, Release asset or npm publication is implied by this report or by merging their PRs.
 
