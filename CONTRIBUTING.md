@@ -8,11 +8,11 @@ npm run build
 npm test
 ```
 
-All native dependencies on this branch come from the exact supported npm release for the **unreleased 0.6.1 candidate**, `0.2.2-alpha.3`. The published v0.6.0 archive was built and validated against `0.2.2-alpha.2` and remains unchanged. No DSH source checkout, connector, patched compiler or global dependency install is needed. `npm test` runs unit, native integration, runtime-capability and release-safety tests with isolated synthetic fixtures. It does not use provider credentials or paid inference. Optional [credential helpers](docs/auth.md) preserve native authentication.
+Dependencies and native tests use exact official npm **DSH 0.2.2-alpha.3**, matching the published **v0.6.1 GitHub Release**. Older v0.6.0 remains paired with alpha.2. Tests use isolated fixtures without personal credentials or real-provider inference; no DSH source checkout or global runtime change is needed.
 
-## Version policy for the candidate
+## Version policy
 
-The candidate bump from 0.6.0 to 0.6.1 is not a release. This branch is **not tagged, has no GitHub Release assets and is not published to npm**; do not claim a release URL, asset digest or tag for it. Before publication, a maintainer must approve the candidate, the version must match `package.json`, the lockfile and this documentation, and the documented checks must pass on the tagged commit. Update the published installation pins only after the release assets exist and are verified.
+The package and lockfile versions must agree. Never move an existing tag or replace published asset bytes. The v0.6.1 release points at `db0492f47e430042b22caf754fbe4da604b09ccc`; its official asset was downloaded, checksum-verified and installed/loaded in a fresh native profile. See [release verification](docs/release-0.6.1-validation.md). GitHub Release and npm publication are separate; no npm publication is claimed.
 
 ## Package validation
 

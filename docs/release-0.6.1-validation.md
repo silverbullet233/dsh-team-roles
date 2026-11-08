@@ -1,0 +1,13 @@
+# Host 0.6.1 release verification — 2026-11-08
+
+The [v0.6.1 GitHub Release](https://github.com/silverbullet233/dsh-team-roles/releases/tag/v0.6.1) points at reviewed main commit `db0492f47e430042b22caf754fbe4da604b09ccc`. Its [tag workflow](https://github.com/silverbullet233/dsh-team-roles/actions/runs/42476229124) passed. Publication did not move older tags, replace assets, publish to npm or change a personal installation.
+
+The actual workflow-built `dsh-team-roles-0.6.1.tgz` has SHA-256 `00f3fbf359289afa648fe8ef57b01739631c3ea70184f7f9351323dae1fcf669`. GitHub's asset digest, downloaded bytes and `SHA256SUMS` agree. After publication both explicit public asset URLs were downloaded anonymously and rechecked. The archive contains 49 expected files, including the built Web asset; GitHub source archives are not substitutes.
+
+Before publication, the downloaded workflow archive passed `scripts/release/check-tarball.mjs` and `scripts/test-portable-package.mjs` against exact official DSH `0.2.2-alpha.3`: fresh native install/load, shared native module identity, Team/role persistence, stale/invalid settings rejection and negative capability/launcher gates. This fixture used seven bounded synthetic requests, two members and no real-provider credentials.
+
+The same source also passed build, full unit/native/runtime/release tests and local package inspection. A separate clean Codex 0.164.0 installation used catalog source `3acbc422a7a657c04a388c4536bfa98efe0341f8`, plugin 0.4.3, official DSH / Team Profile 0.2.2-alpha.3 and a locally built Host 0.6.1 archive. It passed static identity/protocol and exact 18-tool discovery, real Codex app-server `mcpServer/tool/call` → `dsh_team_health`, API 1 and all 15 Host capabilities, correct runtime/Home/workspace attribution, empty role catalog, and actual `dsh_team_shutdown` with Host process exit. The local archive digest differs from the workflow package and is not advertised as the Release digest.
+
+The Codex health acceptance created no Team and invoked no model. Native package fixtures used synthetic Teams. No real-provider inference, authenticated browser rendering, current personal desktop session, Windows compatibility or unrestricted network/OS access is certified. Companion Teams default to native full access / never with network enabled intent; Codex permissions are not automatically inherited. Outer restrictions remain in force.
+
+The matching catalog release target is v0.3.1 / plugin 0.4.3. It must be independently reviewed, tagged and verified before normal installation; its final fixed-tag clean MCP installation is recorded in the companion release report.
