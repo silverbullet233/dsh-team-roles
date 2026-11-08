@@ -35,7 +35,7 @@ async function fixture(t, execution, { emptyCatalog = false, onRequest } = {}) {
 }
 
 test('health reports captured execution intent separately from native settings and later env changes', async t => {
-  const execution = { backend: 'codex-sandbox-host-v1', scope: 'entire-native-host', approval: 'native-ask', filesystem: 'launcher-required', network: 'opaque-state-only' };
+  const execution = { backend: 'native', source: 'full-access-default', approval: 'native-policy', filesystem: 'native-policy', network: 'product-default-open' };
   const { host } = await fixture(t, execution);
   assert.deepEqual((await host.client.request('health')).host.permissionExecution, execution);
   process.env.DSH_AGENT_TEAM_LAUNCH_EXECUTION = JSON.stringify({ backend: 'native' });
@@ -63,7 +63,7 @@ test('exact inherited native policy is applied before first input and members re
   await assert.rejects(host.client.request('send', { teamId: created.teamId, inputId: 'changed', text: 'Must not run' }), error => error.code.endsWith('PERMISSION_MISMATCH'));
 });
 
-test('full-access fallback and outer-launcher projection preserve their exact approval before member work', async t => {
+test('full-access default and explicit profiles preserve their exact approval before member work', async t => {
   for (const [mode, approvalPolicy] of [['read-only', 'ask'], ['danger-full-access', 'ask'], ['danger-full-access', 'never']]) await t.test(`${mode}/${approvalPolicy}`, async t => {
     const { host, port, params, profile } = await fixture(t);
     const requested = { ...profile, sandboxMode: mode, approvalPolicy, writableRoots: [], networkAccess: 'unknown' };
@@ -185,7 +185,7 @@ const startDelegated = (host, parent, childId, provider) => host.ctx.subagents.s
 for (const [mode, approvalPolicy] of [['read-only', 'ask'], ['danger-full-access', 'never']])
 for (const provider of ['spawn', 'fork', 'empty-fork']) test(`empty catalog ${provider} ${mode}/${approvalPolicy} delegation verifies first and recursive children before work and on cold activation`, { timeout: 20000 }, async t => {
   const seen = [];
-  const execution = { backend: 'native', source: mode === 'danger-full-access' ? 'full-access-fallback' : 'explicit-configuration', ...(mode === 'danger-full-access' ? { fallbackReason: 'sandbox-metadata-unavailable' } : {}), filesystem: 'native-policy', network: 'unverified', approval: 'native-policy' };
+  const execution = { backend: 'native', source: mode === 'danger-full-access' ? 'full-access-default' : 'explicit-configuration', filesystem: 'native-policy', network: mode === 'danger-full-access' ? 'product-default-open' : 'unverified', approval: 'native-policy' };
   const f = await fixture(t, execution, { emptyCatalog: true, onRequest: (request, ctx) => {
     const session = ctx.sessions.get(request.sessionId);
     assert.equal(ctx.approval.overrideOf(session), approvalPolicy);
@@ -195,7 +195,7 @@ for (const provider of ['spawn', 'fork', 'empty-fork']) test(`empty catalog ${pr
     assert.equal(own.filter(event => event.type === permissionMarker).length, 1);
     seen.push(request.sessionId);
   } });
-  const profile = { ...f.profile, sandboxMode: mode, approvalPolicy, writableRoots: [], networkAccess: 'unknown' };
+  const profile = { ...f.profile, sandboxMode: mode, approvalPolicy, writableRoots: [], networkAccess: mode === 'danger-full-access' ? 'enabled' : 'unknown' };
   const created = await f.host.client.request('create', { ...f.params, permissionProfile: profile });
   let lead = f.host.ctx.agents.get(created.teamId); await lead.whenIdle();
   const firstId = `synthetic-${provider}-first`, secondId = `synthetic-${provider}-second`;

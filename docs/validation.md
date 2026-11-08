@@ -1,6 +1,16 @@
-> Current network-default follow-up: network is enabled product intent, not inherited network policy. Filesystem state is inherited only through a supported, unchanged launcher state. Restricted/unknown opaque network cannot safely be separated from filesystem/admin policy and is refused before startup/work; no state rewrite or full-access retry is implemented. Historical results below apply to their exact recorded heads.
+# Full-access default validation — 2026-11-08
 
-# Native Gateway refactor validation
+Current behavior: the companion starts native DSH directly with `danger-full-access`/`never` and network enabled intent, without automatic Codex metadata inheritance. Explicit profiles/attestation, admission guards, policy propagation and attributed lifecycle protection remain. Outer OS/process/admin restrictions remain effective. The former launcher/bootstrap/boundary-probe implementation has been removed from the client.
+
+Use `npm run build`, `npm run test:isolated` and `npm run pack:check` for the restricted-environment gate, then normal full CI before merge. The isolated gate excludes listener/process-identity tests and is not a full-CI substitute. New full-access-default validation does not rerun paid provider inference or certify unrestricted OS/network access. See [current configuration](configuration.md#candidate-codex-permission-profiles).
+
+## Current local result
+
+On macOS / Node 26.0.0, this full-access iteration passed build/package checks, **249 full test executions** and **236 isolated executions**, with zero failures/cancellations/skips. The full suites used approved temporary listeners/process checks and no real provider credentials. The client gate also exercised the actual official DSH `0.2.2-alpha.3` CLI with the locally packed host candidate: **10 bounded synthetic requests**, two role members, first-work full-access/never checks, same-member follow-up, question delivery, still-required approval rejected by native never, disconnect, guarded shutdown and cold restart. No persistent credential file was created, and the temporary profile/processes were cleaned up. This is synthetic model integration, not real-provider or unrestricted-network acceptance. Final-head CI and Codex review remain separate required merge gates.
+
+Everything below is **historical evidence for the implementations and heads recorded there**, including obsolete automatic inheritance/fallback behavior. It does not describe current defaults or certify the new implementation. Prior acceptance hashes/dates are retained.
+
+## Historical validation through PR #17
 
 Published v0.6.0 was validated on macOS with Node 26.0.0 and the exact official DSH 0.2.2-alpha.2 npm graph. The unreleased 0.6.1 candidate on this branch (not tagged, released or published) was validated on macOS with Node 26.0.0 against the exact official DSH 0.2.2-alpha.3 npm graph, using a locally built archive installed in an isolated native profile. All automated native fixtures use test-owned stores, bounded deterministic adapters and in-memory credential records. Those automated fixtures performed no live provider inference; a later, separately authorized scoped real-model acceptance is recorded below.
 
