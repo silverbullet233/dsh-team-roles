@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, chmod, readFile, symlink } from 'node:fs/promises';
+import { mkdtemp, rm, chmod, readFile, symlink, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ManagedTeams } from '../../src/teams/service.mjs';
@@ -205,4 +205,54 @@ test('projection distinguishes admission, entered processing, terminal outcome a
   assert.equal(state.inputs[0].outcome, 'completed');
   assert.equal(state.output, '43');
   assert.equal(state.open, false);
+});
+
+test('omitted roots let the user select an existing project outside the launch directory', async t => {
+  const { directory, native, store } = await fixture(t);
+  const project = await mkdtemp(join(tmpdir(), 'user-project-'));
+  t.after(() => rm(project, { recursive: true, force: true }));
+  const bridge = new ManagedTeams({ native, store });
+  const result = await bridge.dispatch('create', { key: 'user-project', cwd: project, text: 'Synthetic user project.' });
+  assert.equal(result.accepted, true);
+  assert.equal(native.calls.find(call => call[0] === 'create')[1].cwd, await realpath(project));
+  native.workspacePath = () => directory;
+  await assert.rejects(bridge.dispatch('create', { key: 'mismatch', cwd: project, workspaceId: 'other', text: 'Synthetic' }), { code: 'WORKSPACE_DENIED' });
+});
+
+test('explicit roots reject symlink escapes but allow canonical aliases', async t => {
+  const { directory, bridge, native } = await fixture(t);
+  const outside = await mkdtemp(join(tmpdir(), 'outside-project-'));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await symlink(outside, join(directory, 'escape'));
+  await mkdir(join(directory, 'project'));
+  await symlink(join(directory, 'project'), join(outside, 'alias'));
+  for (const cwd of [outside, join(directory, 'escape')]) {
+    await assert.rejects(bridge.dispatch('create', { key: cwd, cwd, text: 'Synthetic' }), { code: 'WORKSPACE_DENIED' });
+  }
+  assert.equal(native.calls.length, 0);
+  const result = await bridge.dispatch('create', { key: 'alias', cwd: join(outside, 'alias'), text: 'Synthetic' });
+  assert.equal(result.accepted, true);
+});
+
+test('malformed explicit roots fail closed and default cwd must be a directory', async t => {
+  const { directory, native, store } = await fixture(t);
+  for (const allowedRoots of [null, [], '', ['relative'], [null], [42]]) {
+    assert.throws(() => new ManagedTeams({ native, store, allowedRoots }), { code: 'INVALID_CONFIG' });
+  }
+  const bridge = new ManagedTeams({ native, store });
+  const file = join(directory, 'file');
+  await writeFile(file, 'Synthetic');
+  await assert.rejects(bridge.workspace(file), { code: 'WORKSPACE_DENIED' });
+  await assert.rejects(bridge.workspace(join(directory, 'missing')), { code: 'ENOENT' });
+  assert.equal(native.calls.length, 0);
+});
+
+test('default directory admission propagates native access denial without a broader retry', async t => {
+  const { directory, native, store } = await fixture(t);
+  const bridge = new ManagedTeams({ native, store });
+  let creates = 0;
+  native.create = async () => { creates++; throw Object.assign(new Error('Synthetic native access denied'), { code: 'EACCES' }); };
+  await assert.rejects(bridge.dispatch('create', { key: 'access-denied', cwd: directory, text: 'Synthetic' }), { code: 'NATIVE_FAILURE' });
+  assert.equal(creates, 1);
+  assert.equal(native.calls.some(call => call[0] === 'prompt'), false);
 });
