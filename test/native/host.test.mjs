@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createVolatile, updateVolatile } from '@deepseek-ai/cosmokit';
@@ -9,13 +9,13 @@ import { NativeClient } from '../fixtures/client.mjs';
 import { catalogFromLegacy } from '../../src/settings/catalog.mjs';
 import * as Host from '../../src/host.mjs';
 
-async function fixture(t, root, catalog) {
+async function fixture(t, root, catalog, roots) {
   const base = await mountNativeHost({ root, managed: false });
   await base.roleFiber.dispose();
   // Actual Loader/Settings writes are tested separately; this test exercises
   // the complete native host composition and the volatile consumption seam.
   base.ctx.provide('settings', { configure: () => () => {} });
-  const fiber = base.ctx.plugin(Host, { stateDirectory: join(root, 'role-state'), allowedRoots: [base.fixtureRoot], catalog });
+  const fiber = base.ctx.plugin(Host, { stateDirectory: join(root, 'role-state'), ...(roots ?? { allowedRoots: [base.fixtureRoot] }), catalog });
   await fiber;
   const client = new NativeClient({ ctx: base.ctx });
   t.after(async () => { client.close(); await base.dispose(); });
@@ -80,7 +80,6 @@ test('removed roles still recover bound native members from durable snapshots', 
   assert.equal(host.ctx.agentTeams.listMembers(resumed).find(member => member.name === 'stable-left').id, first.member.id);
 });
 
-
 test('empty catalog preserves native Lead creation and current model inheritance before and after role configuration', { timeout: 20000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'team-role-empty-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -118,4 +117,26 @@ test('empty catalog preserves native Lead creation and current model inheritance
   updateVolatile(host.fiber.effectiveConfig.catalog, createVolatile({ leadRole: '', roles: [] }));
   assert.equal((await host.ctx.dshRoles.prepareLead(managed.teamId)).provider, 'fixture-lead');
   assert.equal(await host.ctx.dshRoles.prepareLead('fresh-after-clear'), null);
+});
+
+test('native host default creates a Team in the user-selected project outside its fixture workspace', { timeout: 20000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'team-workspace-default-'));
+  const project = await mkdtemp(join(tmpdir(), 'user-selected-project-'));
+  t.after(async () => { await rm(root, { recursive: true, force: true }); await rm(project, { recursive: true, force: true }); });
+  const host = await fixture(t, root, catalogFromLegacy({ leadRole: 'lead', roles: fixtureRoles }), {});
+  const created = await host.client.request('create', { key: 'external-project', cwd: project, text: 'Synthetic user-selected project.' });
+  const lead = host.ctx.agents.get(created.teamId);
+  await lead.whenIdle();
+  assert.equal(created.accepted, true);
+  assert(host.requests.some(request => request.sessionId === created.teamId));
+  assert.equal(lead.session.header.cwd, await realpath(project));
+});
+
+test('native host explicit allowlist still rejects an external user project', { timeout: 20000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'team-workspace-limited-'));
+  const project = await mkdtemp(join(tmpdir(), 'user-denied-project-'));
+  t.after(async () => { await rm(root, { recursive: true, force: true }); await rm(project, { recursive: true, force: true }); });
+  const host = await fixture(t, root, catalogFromLegacy({ leadRole: 'lead', roles: fixtureRoles }));
+  await assert.rejects(host.client.request('create', { key: 'denied-project', cwd: project, text: 'Synthetic.' }), /outside the configured workspace roots/);
+  assert.equal(host.requests.length, 0);
 });

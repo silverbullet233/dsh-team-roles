@@ -1,7 +1,7 @@
 /** Idempotent admission metadata over the native Session service. */
 import { API_NAME, API_VERSION, CAPABILITIES } from './capabilities.mjs';
 import { randomUUID } from 'node:crypto';
-import { realpath } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { TeamError, object, text } from './errors.mjs';
 import { digest } from './private-store.mjs';
@@ -19,12 +19,12 @@ function verifyPermissions(intent, actual, saved) {
 /** Serialization is admission-only. DSH remains the sole execution scheduler. */
 export class ManagedTeams {
   constructor({ native, store, allowedRoots, sourceSha = null, runtimeEvidence = null }) {
-    if (!Array.isArray(allowedRoots) || allowedRoots.length === 0 || allowedRoots.some(root => !isAbsolute(root))) {
-      throw new TeamError('INVALID_CONFIG', 'allowedRoots must contain explicit absolute workspace roots.');
+    if (allowedRoots !== undefined && (!Array.isArray(allowedRoots) || allowedRoots.length === 0 || allowedRoots.some(root => typeof root !== 'string' || !isAbsolute(root)))) {
+      throw new TeamError('INVALID_CONFIG', 'allowedRoots, when configured, must contain explicit absolute workspace roots.');
     }
     this.native = native;
     this.store = store;
-    this.allowedRoots = allowedRoots;
+    this.allowedRoots = allowedRoots === undefined ? undefined : [...allowedRoots];
     this.sourceSha = sourceSha;
     this.runtimeEvidence = runtimeEvidence;
     this.tails = new Map();
@@ -42,6 +42,9 @@ export class ManagedTeams {
 
   async workspace(cwd) {
     const directory = await realpath(text(cwd, 'cwd', 4096));
+    if (!(await stat(directory)).isDirectory()) throw new TeamError('WORKSPACE_DENIED', 'cwd must be an existing directory.');
+    // This is an optional admission allowlist, never a grant of native authority.
+    if (this.allowedRoots === undefined) return directory;
     const allowed = await Promise.all(this.allowedRoots.map(root => realpath(root)));
     if (!allowed.some(root => { const suffix = relative(root, directory); return suffix === '' || (!suffix.startsWith(`..${sep}`) && suffix !== '..' && !isAbsolute(suffix)); })) {
       throw new TeamError('WORKSPACE_DENIED', 'Directory is outside the configured workspace roots.');

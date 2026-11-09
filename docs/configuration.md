@@ -19,9 +19,17 @@ Saves validate native provider/model/effort availability and reject stale revisi
 - Native profile entry id: `dsh-agent-team`.
 - Catalog override: `catalog: { leadRole, roles: [...] }` in the active profile's `cordis.patch.yml`.
 - Default state: `dsh-agent-team/state` under the native Harness home.
-- Default workspace allowlist: the profile's launch directory.
+- Default workspace policy: no additional Team directory allowlist. The user selects an existing project directory through `cwd`; native workspace identity and effective OS/process/container/sandbox/admin permissions still apply.
 
 If `dsh-agent-team.json` exists under the Harness home, its state directory, workspace allowlist and role catalog supply inherited values. Saved profile catalog values override them; native home/CLI overlays retain their precedence. Conflicting form writes are refused.
+
+## Workspace restrictions
+
+`allowedRoots` is an optional admission restriction, separate from Team execution permissions. Omit it to let users select any existing directory the host can access. This does not select full access, change approval policy, add writable roots, or grant filesystem/network authority. Native errors propagate without an alternate path or broader retry.
+
+To restrict directory selection, explicitly configure a nonempty array of absolute paths, for example `allowedRoots: ['/srv/projects']`. Both roots and selected directories are resolved through real paths: a symlink inside an allowed root cannot escape it, while an alias resolving inside it is allowed. Empty arrays, null and malformed values are invalid and never mean unrestricted access. `workspaceId`, when supplied, must still resolve to the selected `cwd`. Files and missing directories are refused before Team creation. Directory admission is a point-in-time check, not an OS security boundary against concurrent filesystem changes; use native sandbox/OS controls for enforcement.
+
+Existing profile/home/CLI overrides and legacy JSON allowlists retain their precedence and restrictions. Upgrading does not erase an explicit list, even if it equals an old launch directory. An authorized administrator can deliberately remove that override to adopt the new default; do not infer intent or automatically migrate deployed restrictions.
 
 ## Upgrades
 

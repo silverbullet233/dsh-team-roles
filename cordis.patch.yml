@@ -7,7 +7,7 @@
         stateDirectory: !!js >-
           (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).stateDirectory : dshHomePath('dsh-agent-team/state'); })()
         allowedRoots: !!js >-
-          (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).allowedRoots : [ctx.get('profileContext').cwd]; })()
+          (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).allowedRoots : undefined; })()
         catalog: !!js >-
           (() => { const fs = process.getBuiltinModule('node:fs'); const p = dshHomePath('dsh-agent-team.json'); if (!fs.existsSync(p)) return { leadRole: '', roles: [] }; const c = JSON.parse(fs.readFileSync(p, 'utf8')); return { leadRole: c.leadRole, roles: Object.entries(c.roles).map(([name, role]) => ({ name, ...role })) }; })()
         validation: !!js >-
